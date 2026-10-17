@@ -3,814 +3,344 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniTrace — Autonomous Graph Threat Intelligence Platform (FalkorDB)</title>
+  <title>OmniTrace — Autonomous Graph Threat Cockpit (FalkorDB)</title>
+  
+  <!-- Typography: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23ff2d55'/><path d='M12 2L2 7l10 5 10-5-10-5z' fill='%23ffffff'/></svg>">
+  
+  <!-- Vis.js Standalone Network Engine -->
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-  <style>
-    :root {
-      --bg: #090c15;
-      --card-bg: rgba(15, 20, 32, 0.75);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-active: rgba(0, 240, 255, 0.35);
-      --primary: #00f0ff;
-      --primary-glow: rgba(0, 240, 255, 0.3);
-      --danger: #ff2d55;
-      --danger-glow: rgba(255, 45, 85, 0.4);
-      --warning: #ffb800;
-      --success: #00e676;
-      --violet: #8b5cf6;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: var(--font-sans);
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      user-select: none;
-    }
-
-    /* Background Grid & Vignette */
-    .bg-grid {
-      position: absolute;
-      inset: 0;
-      background-image: 
-        radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 60%),
-        radial-gradient(circle at 10% 20%, rgba(255, 45, 85, 0.06) 0%, transparent 40%),
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    /* Top Navigation Bar */
-    header {
-      height: 60px;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(9, 12, 21, 0.85);
-      border-bottom: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      z-index: 50;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .brand-logo {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #ff2d55, #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      box-shadow: 0 0 16px rgba(255, 45, 85, 0.4);
-    }
-    .brand-title {
-      font-weight: 800;
-      font-size: 1.05rem;
-      letter-spacing: -0.5px;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .badge-pill {
-      font-size: 0.68rem;
-      font-weight: 600;
-      font-family: var(--font-mono);
-      padding: 3px 8px;
-      border-radius: 12px;
-      border: 1px solid;
-    }
-    .badge-track {
-      background: rgba(255, 45, 85, 0.1);
-      border-color: rgba(255, 45, 85, 0.3);
-      color: #ff6b8b;
-    }
-    .badge-falkor {
-      background: rgba(0, 240, 255, 0.08);
-      border-color: rgba(0, 240, 255, 0.25);
-      color: var(--primary);
-    }
-
-    /* Top Stats Bar */
-    .telemetry-strip {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-    .telemetry-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .telemetry-item b {
-      color: #fff;
-      font-weight: 600;
-    }
-    .pulse-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--success);
-      box-shadow: 0 0 8px var(--success);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.85); }
-    }
-
-    /* Actions */
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .btn {
-      font-family: var(--font-sans);
-      font-size: 0.8rem;
-      font-weight: 600;
-      padding: 8px 14px;
-      border-radius: 7px;
-      border: 1px solid transparent;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #ff2d55, #f43f5e);
-      color: #fff;
-      box-shadow: 0 0 14px var(--danger-glow);
-    }
-    .btn-primary:hover {
-      box-shadow: 0 0 22px rgba(255, 45, 85, 0.6);
-      transform: translateY(-1px);
-    }
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: var(--card-border);
-      color: var(--text);
-    }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.15);
-    }
-
-    /* Main Workspace Layout */
-    .app-workspace {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* Full-Screen Graph Canvas */
-    #graph-viewport {
-      width: 100%;
-      height: 100%;
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-    }
-
-    /* Floating Panels Container */
-    .floating-layer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 10;
-      padding: 16px;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    /* Floating Cards */
-    .float-panel {
-      pointer-events: auto;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      backdrop-filter: blur(24px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-      display: flex;
-      flex-direction: column;
-      transition: all 0.25s ease;
-    }
-    .float-panel:hover {
-      border-color: rgba(255, 255, 255, 0.14);
-    }
-
-    /* Left Sidebar: Threat Stream */
-    .threat-deck {
-      width: 380px;
-      max-height: calc(100vh - 170px);
-    }
-    .panel-top {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--card-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .panel-title {
-      font-size: 0.82rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .panel-scroll {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-
-    /* Threat Cards */
-    .threat-item {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid var(--card-border);
-      border-radius: 9px;
-      padding: 12px;
-      margin-bottom: 10px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .threat-item:hover {
-      border-color: rgba(255, 45, 85, 0.4);
-      background: rgba(255, 45, 85, 0.03);
-      transform: translateX(2px);
-    }
-    .threat-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    .threat-severity {
-      font-family: var(--font-mono);
-      font-size: 0.65rem;
-      font-weight: 700;
-      color: var(--danger);
-      background: rgba(255, 45, 85, 0.12);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .threat-name {
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 4px;
-    }
-    .threat-desc {
-      font-size: 0.73rem;
-      color: var(--text-muted);
-      line-height: 1.4;
-      margin-bottom: 8px;
-    }
-    .threat-path {
-      font-family: var(--font-mono);
-      font-size: 0.68rem;
-      color: var(--primary);
-      background: rgba(0, 0, 0, 0.5);
-      padding: 6px 8px;
-      border-radius: 5px;
-      border: 1px solid rgba(0, 240, 255, 0.15);
-      word-break: break-all;
-    }
-
-    /* Right Sidebar: Entity Inspector */
-    .inspector-deck {
-      width: 340px;
-      max-height: calc(100vh - 170px);
-    }
-    .inspector-content {
-      padding: 16px;
-    }
-    .inspector-avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(139, 92, 246, 0.2));
-      border: 1px solid rgba(0, 240, 255, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      margin-bottom: 12px;
-    }
-    .entity-prop-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      font-size: 0.78rem;
-    }
-    .entity-prop-row span:first-child {
-      color: var(--text-dim);
-    }
-    .entity-prop-row span:last-child {
-      color: #fff;
-      font-family: var(--font-mono);
-      font-weight: 500;
-    }
-
-    /* Bottom Drawer: openCypher Studio */
-    .bottom-drawer {
-      position: absolute;
-      bottom: 16px;
-      left: 16px;
-      right: 16px;
-      height: 220px;
-      pointer-events: auto;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      backdrop-filter: blur(24px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
-      display: flex;
-      flex-direction: column;
-      z-index: 20;
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .bottom-drawer.collapsed {
-      transform: translateY(calc(100% - 40px));
-    }
-    .drawer-header {
-      height: 40px;
-      padding: 0 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--card-border);
-      cursor: pointer;
-    }
-    .drawer-body {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 450px 1fr;
-      gap: 16px;
-      padding: 12px 16px;
-      overflow: hidden;
-    }
-    textarea.cypher-area {
-      width: 100%;
-      height: 80px;
-      background: rgba(0, 0, 0, 0.6);
-      border: 1px solid var(--card-border);
-      border-radius: 7px;
-      padding: 10px;
-      color: var(--primary);
-      font-family: var(--font-mono);
-      font-size: 0.76rem;
-      resize: none;
-      outline: none;
-    }
-    textarea.cypher-area:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 10px var(--primary-glow);
-    }
-    .pills-row {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 8px;
-      overflow-x: auto;
-    }
-    .query-pill {
-      font-family: var(--font-mono);
-      font-size: 0.66rem;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--card-border);
-      padding: 3px 8px;
-      border-radius: 5px;
-      cursor: pointer;
-      color: var(--text-muted);
-      white-space: nowrap;
-      transition: all 0.15s;
-    }
-    .query-pill:hover {
-      background: rgba(0, 240, 255, 0.1);
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-
-    .query-output {
-      background: rgba(0, 0, 0, 0.6);
-      border: 1px solid var(--card-border);
-      border-radius: 7px;
-      overflow: auto;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      padding: 8px;
-    }
-    table.data-grid {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    table.data-grid th {
-      text-align: left;
-      padding: 6px 8px;
-      color: var(--violet);
-      border-bottom: 1px solid var(--card-border);
-      position: sticky;
-      top: 0;
-      background: #090c15;
-    }
-    table.data-grid td {
-      padding: 5px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      color: var(--text-muted);
-      white-space: nowrap;
-    }
-
-    /* Floating View Controls */
-    .canvas-hud-controls {
-      position: absolute;
-      top: 16px;
-      left: 410px;
-      display: flex;
-      gap: 8px;
-      z-index: 15;
-    }
-    .hud-btn {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 0.72rem;
-      font-family: var(--font-mono);
-      color: var(--text);
-      cursor: pointer;
-      backdrop-filter: blur(12px);
-      transition: all 0.2s;
-    }
-    .hud-btn:hover {
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-  </style>
+  
+  <!-- Custom Cyber SOC Stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-
+  <!-- Ambient Grid & Glow Background -->
   <div class="bg-grid"></div>
 
-  <!-- Top Navigation -->
+  <!-- TOP BAR: Brand, Health Telemetry, and Action Center -->
   <header>
     <div class="brand">
-      <div class="brand-logo">🛡️</div>
-      <div class="brand-title">
-        OMNITRACE
-        <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">&bull; Graph Threat Radar</span>
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+        </svg>
       </div>
-      <span class="badge-pill badge-track">Track 01 // Connected Data</span>
-      <span class="badge-pill badge-falkor">FalkorDB In-Memory Graph</span>
-    </div>
-
-    <!-- Live Telemetry -->
-    <div class="telemetry-strip">
-      <div class="telemetry-item">
-        <div class="pulse-dot"></div>
-        <span>ENGINE: <b>FalkorDB Cloud</b></span>
-      </div>
-      <div class="telemetry-item">
-        <span>NODES: <b id="stat-nodes">23</b></span>
-      </div>
-      <div class="telemetry-item">
-        <span>TRANSFERS: <b id="stat-edges">21</b></span>
-      </div>
-      <div class="telemetry-item">
-        <span>LATENCY: <b id="stat-latency" style="color:var(--primary);">0.8ms</b></span>
+      <div class="brand-text">
+        <h1>
+          OMNITRACE
+          <span class="brand-badge">TRACK 01</span>
+        </h1>
+        <div class="brand-sub">Autonomous Graph Threat Cockpit • FalkorDB Cloud</div>
       </div>
     </div>
 
-    <div class="header-actions">
-      <button class="btn btn-secondary" onclick="seedGraph()">↻ Re-Seed Scenario</button>
-      <button class="btn btn-primary" onclick="runInvestigation()">⚡ Run Autonomous Investigation</button>
+    <!-- Live Status & In-Memory Metrics -->
+    <div class="nav-status">
+      <div class="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">CONNECTING...</span>
+      </div>
+
+      <div class="db-metric-pill">
+        <span>NODES:</span> <span id="header-node-count">0</span>
+      </div>
+      <div class="db-metric-pill">
+        <span>EDGES:</span> <span id="header-edge-count">0</span>
+      </div>
+      <div class="db-metric-pill">
+        <span>LATENCY:</span> <span>&lt; 1ms</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="nav-actions">
+      <button class="btn btn-demo" id="btn-demo-mode" title="Run automatic 2-minute narrated demo">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Demo Mode (2m)
+      </button>
+
+      <button class="btn btn-secondary" id="btn-seed-data">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+          <path d="M16 21h5v-5"></path>
+        </svg>
+        Seed Data
+      </button>
+
+      <button class="btn btn-primary" id="btn-run-investigation">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        Run Investigation
+      </button>
     </div>
   </header>
 
-  <!-- Workspace Container -->
-  <div class="app-workspace">
-
-    <!-- Graph Canvas Viewport -->
-    <div id="graph-viewport"></div>
-
-    <!-- Floating HUD Controls -->
-    <div class="canvas-hud-controls">
-      <button class="hud-btn" onclick="fitView()">⛶ Center View</button>
-      <button class="hud-btn" onclick="refreshTopology()">↺ Refresh State</button>
-      <button class="hud-btn" onclick="togglePhysics()">⚛ Physics Toggle</button>
-    </div>
-
-    <!-- Floating Layer (Overlays) -->
-    <div class="floating-layer">
-
-      <!-- Left Panel: Autonomous Threat Intelligence -->
-      <div class="float-panel threat-deck">
-        <div class="panel-top">
-          <div class="panel-title">🚨 Threat Intelligence</div>
-          <span class="badge-pill badge-track" id="threat-count">0 Detections</span>
+  <!-- MAIN COCKPIT: 3 COLUMNS -->
+  <div class="cockpit-container">
+    
+    <!-- LEFT PANEL: AGENT INVESTIGATION FEED -->
+    <aside class="left-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          AGENT DOSSIER FEED
         </div>
-        <div class="panel-scroll" id="threats-list">
-          <div style="text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 0.78rem;">
-            No anomalies active.<br>Click <b>Run Autonomous Investigation</b> to analyze multi-hop graph patterns.
+        <span class="badge-counter" id="threat-count-badge">0 THREATS</span>
+      </div>
+
+      <div class="feed-content" id="threats-feed">
+        <!-- Initial empty state -->
+        <div class="empty-state" id="empty-feed-placeholder">
+          <div class="empty-state-icon">📡</div>
+          <div style="font-weight:700; color:#fff; font-size:0.9rem;">Cockpit Ready</div>
+          <div class="empty-state-text">
+            Click <strong>Seed Data</strong> to initialize the financial graph, then click <strong>Run Investigation</strong> to begin autonomous threat hunting.
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER PANEL: INTERACTIVE GRAPH RADAR -->
+    <main class="center-panel">
+      <div id="vis-network-canvas"></div>
+
+      <!-- Graph HUD: Search & Controls -->
+      <div class="graph-hud">
+        <div class="search-box">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" class="search-input" id="node-search-input" placeholder="Search entity (e.g. ACC_MULE_ALPHA)..." autocomplete="off">
+          <div class="search-dropdown" id="search-dropdown"></div>
+        </div>
+
+        <div class="hud-actions">
+          <button class="hud-btn" id="btn-fit-screen" title="Fit all nodes in view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+            Fit View
+          </button>
+
+          <button class="hud-btn active" id="btn-toggle-physics" title="Toggle graph physics simulation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="2" x2="12" y2="6"></line>
+              <line x1="12" y1="18" x2="12" y2="22"></line>
+              <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+              <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+              <line x1="2" y1="12" x2="6" y2="12"></line>
+              <line x1="18" y1="12" x2="22" y2="12"></line>
+            </svg>
+            Physics
+          </button>
+        </div>
+      </div>
+
+      <!-- Focus Reset Banner -->
+      <div class="focus-banner" id="focus-banner">
+        <span id="focus-banner-text">Isolated Threat Trail</span>
+        <button id="btn-reset-focus">✕ Clear Highlight</button>
+      </div>
+
+      <!-- Floating Legend -->
+      <div class="graph-legend">
+        <div class="legend-item"><span class="legend-dot account"></span> Account</div>
+        <div class="legend-item"><span class="legend-dot sanctioned"></span> OFAC Target</div>
+        <div class="legend-item"><span class="legend-dot frozen"></span> Frozen</div>
+        <div class="legend-item"><span class="legend-dot device"></span> Device</div>
+        <div class="legend-item"><span class="legend-dot ip"></span> IP Proxy</div>
+      </div>
+
+      <!-- Slide-in Node Detail Drawer -->
+      <div class="node-drawer" id="node-drawer">
+        <div class="drawer-header">
+          <span class="drawer-title" id="drawer-node-type">Account Entity</span>
+          <button class="drawer-close" id="btn-close-drawer">✕</button>
+        </div>
+        <div class="drawer-node-id" id="drawer-node-id">ACC_000</div>
+        
+        <div class="drawer-prop-list">
+          <div class="drawer-prop-row">
+            <span class="prop-key">Status:</span>
+            <span class="prop-val" id="drawer-node-status">ACTIVE</span>
+          </div>
+          <div class="drawer-prop-row">
+            <span class="prop-key">Risk Evaluation:</span>
+            <span class="prop-val" id="drawer-node-risk">15 / 100</span>
+          </div>
+          <div class="drawer-prop-row">
+            <span class="prop-key">Engine:</span>
+            <span class="prop-val" style="color:var(--cyan);">FalkorDB In-Memory</span>
+          </div>
+        </div>
+
+        <div id="drawer-actions"></div>
+      </div>
+    </main>
+
+    <!-- RIGHT PANEL: TABS (METRICS / FREEZE REGISTRY / CYPHER STUDIO) -->
+    <aside class="right-panel">
+      <div class="panel-tabs">
+        <button class="tab-btn active" data-tab="metrics">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          Metrics
+        </button>
+
+        <button class="tab-btn" data-tab="registry">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          Freeze Registry
+        </button>
+
+        <button class="tab-btn" data-tab="cypher">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          Cypher Studio
+        </button>
+      </div>
+
+      <!-- TAB 1: METRICS -->
+      <div class="tab-pane active" id="tab-pane-metrics">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Nodes Audited</div>
+            <div class="stat-number cyan" id="stat-nodes">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Edges Traversed</div>
+            <div class="stat-number green" id="stat-edges">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Threats Caught</div>
+            <div class="stat-number red" id="stat-threats">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Accounts Frozen</div>
+            <div class="stat-number amber" id="stat-frozen">0</div>
+          </div>
+        </div>
+
+        <div class="engine-status-card">
+          <div class="engine-status-header">
+            <span>FALKORDB ENGINE TELEMETRY</span>
+            <span style="color:var(--green); font-family:var(--font-mono);">ONLINE</span>
+          </div>
+          <div class="engine-metric-list">
+            <div class="engine-metric-item">
+              <span>GraphBLAS Engine</span>
+              <span>Vectorized LinAlg</span>
+            </div>
+            <div class="engine-metric-item">
+              <span>Sub-Hop Traversal</span>
+              <span style="color:var(--cyan);">&lt; 0.85 ms</span>
+            </div>
+            <div class="engine-metric-item">
+              <span>Multi-Hop Algorithm</span>
+              <span>Directed Shortest Path</span>
+            </div>
+            <div class="engine-metric-item">
+              <span>Cycle Detection</span>
+              <span>Closed Loop Match</span>
+            </div>
+            <div class="engine-metric-item">
+              <span>Enforcement Mutations</span>
+              <span style="color:var(--green);">ACID Atomic</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Right Panel: Entity Inspector -->
-      <div class="float-panel inspector-deck" id="inspector-panel">
-        <div class="panel-top">
-          <div class="panel-title">🔍 Entity Inspector</div>
-          <span class="badge-pill badge-falkor" id="insp-type">Node</span>
+      <!-- TAB 2: FREEZE REGISTRY -->
+      <div class="tab-pane" id="tab-pane-registry">
+        <div class="freeze-registry-header">
+          <span>GRAPH LOCKOUTS</span>
+          <span class="badge-counter" id="freeze-registry-count">0 FROZEN</span>
         </div>
-        <div class="inspector-content" id="inspector-body">
-          <div style="text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 0.78rem;">
-            Click on any account, device, or sanctioned entity in the graph to inspect its properties and transaction links.
+        <div class="freeze-list" id="freeze-registry-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">🛡️</div>
+            <div style="font-weight:700; color:#fff;">No Frozen Accounts</div>
+            <div class="empty-state-text">No accounts locked. Run the autonomous investigation to detect and freeze compromised mules.</div>
           </div>
         </div>
       </div>
 
-    </div>
+      <!-- TAB 3: CYPHER STUDIO -->
+      <div class="tab-pane" id="tab-pane-cypher">
+        <div class="cypher-studio-container">
+          <div class="preset-pills-label">One-Click Presets</div>
+          <div class="preset-pills">
+            <button class="preset-pill" data-preset="shortest_path">Shortest Path</button>
+            <button class="preset-pill" data-preset="cycle_detection">Cycle Detection</button>
+            <button class="preset-pill" data-preset="sybil_collisions">Sybil Hardware</button>
+            <button class="preset-pill" data-preset="frozen_registry">Frozen Mules</button>
+          </div>
 
-    <!-- Bottom Collapsible Drawer: openCypher Studio -->
-    <div class="bottom-drawer" id="cypher-drawer">
-      <div class="drawer-header" onclick="toggleDrawer()">
-        <div style="font-size:0.78rem; font-weight:700; font-family:var(--font-mono); color:var(--primary); display:flex; align-items:center; gap:8px;">
-          <span>🔮</span> OPENCYPHER THREAT STUDIO <span style="font-size:0.65rem; color:var(--text-dim);">(Click to toggle)</span>
-        </div>
-        <div style="font-size:0.7rem; font-family:var(--font-mono); color:var(--text-muted);" id="query-meta">Ready</div>
-      </div>
-      <div class="drawer-body">
-        <div>
-          <div class="pills-row">
-            <span class="query-pill" onclick="loadQuery('MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops')">Shortest Path to Sanctions</span>
-            <span class="query-pill" onclick="loadQuery('MATCH (a:Account)-[:TRANSFERRED]->(b)-[:TRANSFERRED]->(c)-[:TRANSFERRED]->(a) RETURN a.id, b.id, c.id')">Cycle Detection (Structuring)</span>
-            <span class="query-pill" onclick="loadQuery('MATCH (a1:Account)-[:OPERATED_FROM]->(d:Device)<-[:OPERATED_FROM]-(a2) RETURN d.fingerprint, a1.id, a2.id')">Sybil Device Collisions</span>
-            <span class="query-pill" onclick="loadQuery('MATCH (a:Account {status: \'FROZEN\'}) RETURN a.id, a.holder, a.risk_score')">Frozen Accounts</span>
+          <div class="editor-box">
+            <div class="editor-header">
+              <span>openCypher Console</span>
+              <span>Ctrl+Enter to Run</span>
+            </div>
+            <textarea class="cypher-textarea" id="cypher-editor" spellcheck="false" placeholder="Enter openCypher query...">MATCH (n) RETURN labels(n)[0] AS type, count(n) AS count;</textarea>
+            <div class="editor-footer">
+              <span class="query-telemetry" id="cypher-telemetry">Ready</span>
+              <button class="btn btn-secondary" id="btn-run-cypher" style="padding:4px 10px; font-size:0.72rem;">
+                ▶ Run Query
+              </button>
+            </div>
           </div>
-          <textarea class="cypher-area" id="cypher-sql">MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops</textarea>
-          <div style="display:flex; justify-content:flex-end; margin-top:6px;">
-            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;" onclick="executeQuery()">Execute openCypher</button>
+
+          <div class="results-table-container" id="cypher-results-table">
+            <div style="padding:30px; text-align:center; color:#64748b; font-family:'JetBrains Mono'; font-size:11px;">
+              Click "Run Query" or a preset pill above to view FalkorDB tabular results.
+            </div>
           </div>
-        </div>
-        <div class="query-output" id="query-grid">
-          <div style="color:var(--text-dim); text-align:center; padding:20px;">Execute an openCypher query to view tabular graph results.</div>
         </div>
       </div>
-    </div>
+
+    </aside>
 
   </div>
 
-  <script>
-    let network = null;
-    let graphData = { nodes: new vis.DataSet([]), edges: new vis.DataSet([]) };
-    let physicsEnabled = true;
+  <!-- Live Toast Container -->
+  <div id="toast-container"></div>
 
-    function initNetwork() {
-      const container = document.getElementById('graph-viewport');
-      const options = {
-        nodes: {
-          borderWidth: 2,
-          shadow: { enabled: true, color: 'rgba(0,0,0,0.8)', size: 14 }
-        },
-        edges: {
-          smooth: { type: 'curvedCW', roundness: 0.15 },
-          arrows: { to: { enabled: true, scaleFactor: 0.8 } }
-        },
-        physics: {
-          barnesHut: { gravitationalConstant: -3200, centralGravity: 0.3, springLength: 120, springConstant: 0.04 },
-          stabilization: { iterations: 120 }
-        },
-        interaction: { hover: true, tooltipDelay: 100 }
-      };
+  <!-- Demo Mode Narration Banner -->
+  <div class="demo-banner" id="demo-banner">
+    <span class="demo-pulse"></span>
+    <span id="demo-narration-text">Demo Mode Active</span>
+  </div>
 
-      network = new vis.Network(container, graphData, options);
-
-      network.on("click", function (params) {
-        if (params.nodes.length > 0) {
-          const nodeId = params.nodes[0];
-          inspectNode(nodeId);
-        }
-      });
-    }
-
-    async function refreshTopology() {
-      try {
-        const t0 = performance.now();
-        const res = await fetch('/api/graph/state');
-        const data = await res.json();
-        const elapsed = (performance.now() - t0).toFixed(1);
-
-        document.getElementById('stat-nodes').textContent = data.nodes.length;
-        document.getElementById('stat-edges').textContent = data.edges.length;
-        document.getElementById('stat-latency').textContent = `${elapsed}ms`;
-
-        graphData.nodes.clear();
-        graphData.edges.clear();
-        graphData.nodes.add(data.nodes);
-        graphData.edges.add(data.edges);
-      } catch (e) {
-        console.error('Topology refresh error:', e);
-      }
-    }
-
-    function fitView() {
-      if (network) network.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
-    }
-
-    function togglePhysics() {
-      physicsEnabled = !physicsEnabled;
-      network.setOptions({ physics: { enabled: physicsEnabled } });
-    }
-
-    function toggleDrawer() {
-      document.getElementById('cypher-drawer').classList.toggle('collapsed');
-    }
-
-    function inspectNode(nodeId) {
-      const node = graphData.nodes.get(nodeId);
-      if (!node) return;
-
-      document.getElementById('insp-type').textContent = node.group || 'Node';
-      const body = document.getElementById('inspector-body');
-
-      body.innerHTML = `
-        <div class="inspector-avatar">${node.group === 'SanctionedEntity' ? '🚨' : (node.group === 'Device' ? '📱' : '💳')}</div>
-        <div style="font-weight:700; font-size:1rem; margin-bottom:12px; color:#fff;">${node.id}</div>
-        <div class="entity-prop-row">
-          <span>Type</span>
-          <span>${node.group}</span>
-        </div>
-        <div class="entity-prop-row">
-          <span>Status</span>
-          <span style="color:${node.color.background === '#ff3300' ? 'var(--danger)' : 'var(--success)'};">${node.color.background === '#ff3300' ? 'FROZEN' : 'ACTIVE'}</span>
-        </div>
-        <div style="margin-top:16px;">
-          ${node.color.background === '#ff3300' 
-            ? `<button class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="unfreezeAccount('${node.id}')">Unfreeze Account</button>`
-            : `<button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="freezeAccountManual('${node.id}')">Manual Account Freeze</button>`}
-        </div>
-      `;
-    }
-
-    async function seedGraph() {
-      if (!confirm("Reset FalkorDB and re-seed the financial threat scenario?")) return;
-      try {
-        const res = await fetch('/api/seed', { method: 'POST' });
-        await res.json();
-        await refreshTopology();
-        document.getElementById('threats-list').innerHTML = `
-          <div style="text-align: center; color: var(--success); padding: 30px 10px; font-size: 0.78rem;">
-            ✓ Financial graph seeded successfully.<br>Ready for autonomous investigation.
-          </div>
-        `;
-        document.getElementById('threat-count').textContent = '0 Detections';
-      } catch (e) {
-        alert("Seed error: " + e.message);
-      }
-    }
-
-    async function runInvestigation() {
-      const btn = event.target;
-      btn.textContent = "Investigating Graph...";
-      btn.disabled = true;
-
-      try {
-        const t0 = performance.now();
-        const res = await fetch('/api/investigate', { method: 'POST' });
-        const dossier = await res.json();
-        const elapsed = (performance.now() - t0).toFixed(0);
-
-        document.getElementById('threat-count').textContent = `${dossier.findings.length} Detections`;
-        const list = document.getElementById('threats-list');
-
-        list.innerHTML = dossier.findings.map((f, idx) => `
-          <div class="threat-item" onclick="focusThreat('${f.source_account || (f.ring_members && f.ring_members[0]) || ''}')">
-            <div class="threat-header">
-              <span class="threat-severity">${f.severity}</span>
-              <span style="font-size:0.68rem; font-family:var(--font-mono); color:var(--text-dim);">Threat #${idx+1}</span>
-            </div>
-            <div class="threat-name">${f.type}</div>
-            <div class="threat-desc">${f.reasoning}</div>
-            ${f.path_trail ? `<div class="threat-path">📍 ${f.path_trail}</div>` : ''}
-            ${f.cycle_path ? `<div class="threat-path">🔄 ${f.cycle_path}</div>` : ''}
-            ${f.device_fingerprint ? `<div class="threat-path">📱 ${f.device_fingerprint}</div>` : ''}
-          </div>
-        `).join('');
-
-        await refreshTopology();
-      } catch (e) {
-        alert("Investigation error: " + e.message);
-      } finally {
-        btn.textContent = "⚡ Run Autonomous Investigation";
-        btn.disabled = false;
-      }
-    }
-
-    function focusThreat(nodeId) {
-      if (!nodeId || !network) return;
-      network.focus(nodeId, { scale: 1.3, animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
-      inspectNode(nodeId);
-    }
-
-    async function freezeAccountManual(accId) {
-      alert("Account " + accId + " manual freeze executed.");
-    }
-
-    async function unfreezeAccount(accId) {
-      try {
-        await fetch('/api/account/unfreeze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accId })
-        });
-        await refreshTopology();
-        inspectNode(accId);
-      } catch (e) {
-        alert("Unfreeze error: " + e.message);
-      }
-    }
-
-    function loadQuery(q) {
-      document.getElementById('cypher-sql').value = q;
-      executeQuery();
-    }
-
-    async function executeQuery() {
-      const q = document.getElementById('cypher-sql').value.trim();
-      if (!q) return;
-      const grid = document.getElementById('query-grid');
-      grid.innerHTML = '<div style="color:var(--primary); padding:15px; text-align:center;">Executing openCypher on FalkorDB...</div>';
-
-      try {
-        const res = await fetch('/api/graph/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q })
-        });
-        const data = await res.json();
-
-        if (!data.ok) {
-          grid.innerHTML = `<div style="color:var(--danger); padding:10px;">Error: ${data.error}</div>`;
-          return;
-        }
-
-        document.getElementById('query-meta').textContent = `${data.rows.length} rows in ${data.execution_time_ms}ms`;
-
-        if (data.rows.length === 0) {
-          grid.innerHTML = `<div style="color:var(--text-dim); text-align:center; padding:15px;">0 rows returned (${data.execution_time_ms}ms).</div>`;
-          return;
-        }
-
-        let html = `<table class="data-grid"><thead><tr>`;
-        data.columns.forEach(c => { html += `<th>${c}</th>`; });
-        html += `</tr></thead><tbody>`;
-        data.rows.forEach(r => {
-          html += `<tr>`;
-          r.forEach(v => {
-            const display = typeof v === 'object' ? JSON.stringify(v) : v;
-            html += `<td>${display}</td>`;
-          });
-          html += `</tr>`;
-        });
-        html += `</tbody></table>`;
-        grid.innerHTML = html;
-      } catch (e) {
-        grid.innerHTML = `<div style="color:var(--danger); padding:10px;">Network error: ${e.message}</div>`;
-      }
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      initNetwork();
-      refreshTopology();
-    });
-  </script>
+  <!-- Main JavaScript Logic -->
+  <script src="/static/app.js"></script>
 </body>
 </html>
