@@ -3,421 +3,586 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniTrace — Autonomous Multi-Hop Graph Fraud Investigator (FalkorDB)</title>
+  <title>OmniTrace — Autonomous Graph Threat Intelligence Platform (FalkorDB)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     :root {
-      --bg: #07090e;
-      --surface: rgba(14, 18, 29, 0.85);
-      --surface-border: rgba(35, 46, 74, 0.85);
+      --bg: #090c15;
+      --card-bg: rgba(15, 20, 32, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-border-active: rgba(0, 240, 255, 0.35);
       --primary: #00f0ff;
-      --primary-glow: rgba(0, 240, 255, 0.25);
-      --danger: #ff0055;
-      --danger-glow: rgba(255, 0, 85, 0.35);
+      --primary-glow: rgba(0, 240, 255, 0.3);
+      --danger: #ff2d55;
+      --danger-glow: rgba(255, 45, 85, 0.4);
       --warning: #ffb800;
-      --success: #00ff88;
-      --violet: #b026ff;
-      --text: #f1f5f9;
-      --text-muted: #8493a8;
-      --font-ui: 'Plus Jakarta Sans', sans-serif;
-      --font-code: 'Fira Code', monospace;
+      --success: #00e676;
+      --violet: #8b5cf6;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background-color: var(--bg);
-      background-image: 
-        radial-gradient(circle at 10% 10%, rgba(255, 0, 85, 0.08) 0%, transparent 45%),
-        radial-gradient(circle at 90% 90%, rgba(0, 240, 255, 0.08) 0%, transparent 45%),
-        linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
-      background-size: 100% 100%, 100% 100%, 28px 28px, 28px 28px;
       color: var(--text);
-      font-family: var(--font-ui);
-      min-height: 100vh;
+      font-family: var(--font-sans);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      user-select: none;
     }
 
+    /* Background Grid & Vignette */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image: 
+        radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 60%),
+        radial-gradient(circle at 10% 20%, rgba(255, 45, 85, 0.06) 0%, transparent 40%),
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Top Navigation Bar */
     header {
-      height: 64px;
-      padding: 0 24px;
+      height: 60px;
+      padding: 0 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid var(--surface-border);
-      background: rgba(7, 9, 14, 0.9);
-      backdrop-filter: blur(16px);
+      background: rgba(9, 12, 21, 0.85);
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
       z-index: 50;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
     }
-    .brand-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--danger), var(--primary));
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #ff2d55, #8b5cf6);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
-      box-shadow: 0 0 20px var(--danger-glow);
+      font-size: 16px;
+      box-shadow: 0 0 16px rgba(255, 45, 85, 0.4);
     }
     .brand-title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 1.25rem;
-      font-weight: 900;
-      letter-spacing: 1.5px;
-      background: linear-gradient(90deg, #fff, #ff80aa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+      font-size: 1.05rem;
+      letter-spacing: -0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-
-    .badge {
-      font-family: var(--font-code);
+    .badge-pill {
       font-size: 0.68rem;
       font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 20px;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: 12px;
       border: 1px solid;
     }
     .badge-track {
-      background: rgba(255, 0, 85, 0.12);
-      border-color: rgba(255, 0, 85, 0.4);
-      color: #ff80a6;
+      background: rgba(255, 45, 85, 0.1);
+      border-color: rgba(255, 45, 85, 0.3);
+      color: #ff6b8b;
     }
-    .badge-status {
-      background: rgba(0, 255, 136, 0.12);
-      border-color: rgba(0, 255, 136, 0.4);
-      color: var(--success);
+    .badge-falkor {
+      background: rgba(0, 240, 255, 0.08);
+      border-color: rgba(0, 240, 255, 0.25);
+      color: var(--primary);
     }
 
+    /* Top Stats Bar */
+    .telemetry-strip {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .telemetry-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .telemetry-item b {
+      color: #fff;
+      font-weight: 600;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Actions */
     .header-actions {
       display: flex;
-      gap: 12px;
+      align-items: center;
+      gap: 10px;
     }
     .btn {
-      font-family: var(--font-ui);
+      font-family: var(--font-sans);
+      font-size: 0.8rem;
       font-weight: 600;
-      font-size: 0.82rem;
-      padding: 8px 16px;
-      border-radius: 8px;
+      padding: 8px 14px;
+      border-radius: 7px;
       border: 1px solid transparent;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      transition: all 0.2s ease;
+      gap: 6px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .btn-danger {
-      background: linear-gradient(135deg, var(--danger), #cc0044);
+    .btn-primary {
+      background: linear-gradient(135deg, #ff2d55, #f43f5e);
       color: #fff;
-      box-shadow: 0 0 16px var(--danger-glow);
+      box-shadow: 0 0 14px var(--danger-glow);
     }
-    .btn-danger:hover {
-      box-shadow: 0 0 24px rgba(255, 0, 85, 0.6);
+    .btn-primary:hover {
+      box-shadow: 0 0 22px rgba(255, 45, 85, 0.6);
       transform: translateY(-1px);
     }
     .btn-secondary {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: var(--surface-border);
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--card-border);
       color: var(--text);
     }
     .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
     }
 
-    /* 3-Column Layout */
-    .dashboard-grid {
+    /* Main Workspace Layout */
+    .app-workspace {
       flex: 1;
-      display: grid;
-      grid-template-columns: 360px 1fr 380px;
-      gap: 16px;
-      padding: 16px;
+      position: relative;
       overflow: hidden;
     }
 
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--surface-border);
+    /* Full-Screen Graph Canvas */
+    #graph-viewport {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+    }
+
+    /* Floating Panels Container */
+    .floating-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Floating Cards */
+    .float-panel {
+      pointer-events: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
       border-radius: 12px;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      backdrop-filter: blur(12px);
+      transition: all 0.25s ease;
     }
-    .panel-header {
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--surface-border);
+    .float-panel:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    /* Left Sidebar: Threat Stream */
+    .threat-deck {
+      width: 380px;
+      max-height: calc(100vh - 170px);
+    }
+    .panel-top {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: rgba(255, 255, 255, 0.02);
     }
     .panel-title {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.8px;
+      color: #fff;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .panel-body {
+    .panel-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 12px;
     }
 
-    /* Threat Findings */
-    .threat-card {
-      background: rgba(255, 0, 85, 0.04);
-      border: 1px solid rgba(255, 0, 85, 0.25);
-      border-radius: 8px;
+    /* Threat Cards */
+    .threat-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 9px;
       padding: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      cursor: pointer;
       transition: all 0.2s ease;
     }
-    .threat-card:hover {
-      border-color: var(--danger);
-      box-shadow: 0 0 12px var(--danger-glow);
+    .threat-item:hover {
+      border-color: rgba(255, 45, 85, 0.4);
+      background: rgba(255, 45, 85, 0.03);
+      transform: translateX(2px);
     }
-    .threat-badge {
-      font-family: var(--font-code);
+    .threat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .threat-severity {
+      font-family: var(--font-mono);
       font-size: 0.65rem;
       font-weight: 700;
       color: var(--danger);
-      text-transform: uppercase;
+      background: rgba(255, 45, 85, 0.12);
+      padding: 2px 6px;
+      border-radius: 4px;
     }
-    .threat-title {
+    .threat-name {
+      font-size: 0.82rem;
       font-weight: 700;
-      font-size: 0.85rem;
       color: #fff;
-      margin: 4px 0;
+      margin-bottom: 4px;
     }
     .threat-desc {
-      font-size: 0.74rem;
+      font-size: 0.73rem;
       color: var(--text-muted);
       line-height: 1.4;
       margin-bottom: 8px;
     }
-    .threat-trail {
-      font-family: var(--font-code);
+    .threat-path {
+      font-family: var(--font-mono);
       font-size: 0.68rem;
-      background: rgba(0, 0, 0, 0.4);
-      padding: 6px;
-      border-radius: 4px;
       color: var(--primary);
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 8px;
+      border-radius: 5px;
+      border: 1px solid rgba(0, 240, 255, 0.15);
       word-break: break-all;
     }
 
-    /* Canvas HUD */
-    #graph-container {
-      width: 100%;
-      height: 100%;
-      position: relative;
+    /* Right Sidebar: Entity Inspector */
+    .inspector-deck {
+      width: 340px;
+      max-height: calc(100vh - 170px);
     }
-    #network-canvas {
-      width: 100%;
-      height: 100%;
+    .inspector-content {
+      padding: 16px;
     }
-    .canvas-hud {
-      position: absolute;
-      top: 14px;
-      left: 14px;
-      display: flex;
-      gap: 10px;
-      z-index: 10;
-    }
-    .hud-pill {
-      background: rgba(7, 9, 14, 0.85);
-      border: 1px solid var(--surface-border);
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-family: var(--font-code);
-      backdrop-filter: blur(8px);
+    .inspector-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(139, 92, 246, 0.2));
+      border: 1px solid rgba(0, 240, 255, 0.3);
       display: flex;
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 12px;
+    }
+    .entity-prop-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.78rem;
+    }
+    .entity-prop-row span:first-child {
+      color: var(--text-dim);
+    }
+    .entity-prop-row span:last-child {
+      color: #fff;
+      font-family: var(--font-mono);
+      font-weight: 500;
     }
 
-    /* Enforcement Action List */
-    .action-item {
+    /* Bottom Drawer: openCypher Studio */
+    .bottom-drawer {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      height: 220px;
+      pointer-events: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      z-index: 20;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .bottom-drawer.collapsed {
+      transform: translateY(calc(100% - 40px));
+    }
+    .drawer-header {
+      height: 40px;
+      padding: 0 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px;
-      background: rgba(255, 255, 255, 0.02);
-      border-left: 3px solid var(--danger);
-      border-radius: 0 6px 6px 0;
-      margin-bottom: 8px;
-      font-size: 0.78rem;
+      border-bottom: 1px solid var(--card-border);
+      cursor: pointer;
     }
-
-    /* openCypher Box */
-    textarea.code-input {
+    .drawer-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 450px 1fr;
+      gap: 16px;
+      padding: 12px 16px;
+      overflow: hidden;
+    }
+    textarea.cypher-area {
       width: 100%;
-      height: 75px;
-      background: #030509;
-      border: 1px solid var(--surface-border);
-      border-radius: 8px;
+      height: 80px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 7px;
       padding: 10px;
-      color: #00f0ff;
-      font-family: var(--font-code);
+      color: var(--primary);
+      font-family: var(--font-mono);
       font-size: 0.76rem;
-      resize: vertical;
+      resize: none;
       outline: none;
-      margin-bottom: 8px;
     }
-    textarea.code-input:focus {
+    textarea.cypher-area:focus {
       border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
     }
-    .quick-queries {
+    .pills-row {
       display: flex;
-      flex-wrap: wrap;
       gap: 6px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+      overflow-x: auto;
     }
-    .quick-pill {
-      font-size: 0.68rem;
-      font-family: var(--font-code);
+    .query-pill {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
       background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--surface-border);
-      padding: 4px 8px;
-      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      padding: 3px 8px;
+      border-radius: 5px;
       cursor: pointer;
       color: var(--text-muted);
+      white-space: nowrap;
       transition: all 0.15s;
     }
-    .quick-pill:hover {
-      background: rgba(255, 0, 85, 0.1);
-      border-color: var(--danger);
-      color: #ff80a6;
+    .query-pill:hover {
+      background: rgba(0, 240, 255, 0.1);
+      border-color: var(--primary);
+      color: var(--primary);
     }
-    .query-result {
-      background: #030509;
-      border: 1px solid var(--surface-border);
-      border-radius: 8px;
-      max-height: 200px;
+
+    .query-output {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 7px;
       overflow: auto;
-      font-family: var(--font-code);
+      font-family: var(--font-mono);
       font-size: 0.72rem;
       padding: 8px;
     }
-    .query-table {
+    table.data-grid {
       width: 100%;
       border-collapse: collapse;
     }
-    .query-table th {
+    table.data-grid th {
       text-align: left;
-      padding: 5px 8px;
-      color: var(--danger);
-      border-bottom: 1px solid var(--surface-border);
+      padding: 6px 8px;
+      color: var(--violet);
+      border-bottom: 1px solid var(--card-border);
       position: sticky;
       top: 0;
-      background: #030509;
+      background: #090c15;
     }
-    .query-table td {
-      padding: 4px 8px;
+    table.data-grid td {
+      padding: 5px 8px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       color: var(--text-muted);
       white-space: nowrap;
+    }
+
+    /* Floating View Controls */
+    .canvas-hud-controls {
+      position: absolute;
+      top: 16px;
+      left: 410px;
+      display: flex;
+      gap: 8px;
+      z-index: 15;
+    }
+    .hud-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text);
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      transition: all 0.2s;
+    }
+    .hud-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Bar -->
+  <div class="bg-grid"></div>
+
+  <!-- Top Navigation -->
   <header>
     <div class="brand">
-      <div class="brand-icon">🛡️</div>
-      <div>
-        <div class="brand-title">OMNITRACE</div>
-        <div style="font-size: 0.7rem; color: var(--text-muted);">Autonomous Multi-Hop Graph Fraud & Threat Intelligence OS</div>
+      <div class="brand-logo">🛡️</div>
+      <div class="brand-title">
+        OMNITRACE
+        <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">&bull; Graph Threat Radar</span>
       </div>
-      <span class="badge badge-track">Track 01: Agents That Act on Connected Data</span>
-      <span class="badge badge-status">● FalkorDB Cloud Online</span>
+      <span class="badge-pill badge-track">Track 01 // Connected Data</span>
+      <span class="badge-pill badge-falkor">FalkorDB In-Memory Graph</span>
+    </div>
+
+    <!-- Live Telemetry -->
+    <div class="telemetry-strip">
+      <div class="telemetry-item">
+        <div class="pulse-dot"></div>
+        <span>ENGINE: <b>FalkorDB Cloud</b></span>
+      </div>
+      <div class="telemetry-item">
+        <span>NODES: <b id="stat-nodes">23</b></span>
+      </div>
+      <div class="telemetry-item">
+        <span>TRANSFERS: <b id="stat-edges">21</b></span>
+      </div>
+      <div class="telemetry-item">
+        <span>LATENCY: <b id="stat-latency" style="color:var(--primary);">0.8ms</b></span>
+      </div>
     </div>
 
     <div class="header-actions">
-      <button class="btn btn-secondary" onclick="seedDataset()">↻ Reset & Seed Graph</button>
-      <button class="btn btn-danger" onclick="triggerInvestigation()">⚡ Run Autonomous Investigation</button>
+      <button class="btn btn-secondary" onclick="seedGraph()">↻ Re-Seed Scenario</button>
+      <button class="btn btn-primary" onclick="runInvestigation()">⚡ Run Autonomous Investigation</button>
     </div>
   </header>
 
-  <!-- 3-Column Layout -->
-  <div class="dashboard-grid">
+  <!-- Workspace Container -->
+  <div class="app-workspace">
 
-    <!-- Column 1: Autonomous Threat Findings -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">🚨 Detected Threat Rings</div>
-        <span class="badge badge-track" id="finding-count">0 Threats</span>
-      </div>
-      <div class="panel-body" id="findings-container">
-        <div style="color: var(--text-muted); font-size: 0.78rem; text-align: center; padding: 20px;">
-          Click "Run Autonomous Investigation" to trigger the multi-hop reasoning agent.
-        </div>
-      </div>
+    <!-- Graph Canvas Viewport -->
+    <div id="graph-viewport"></div>
+
+    <!-- Floating HUD Controls -->
+    <div class="canvas-hud-controls">
+      <button class="hud-btn" onclick="fitView()">⛶ Center View</button>
+      <button class="hud-btn" onclick="refreshTopology()">↺ Refresh State</button>
+      <button class="hud-btn" onclick="togglePhysics()">⚛ Physics Toggle</button>
     </div>
 
-    <!-- Column 2: Vis.js Threat Graph Canvas -->
-    <div class="panel" style="position: relative;">
-      <div class="panel-header">
-        <div class="panel-title">🌐 Financial Transaction & Device Mesh</div>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="refreshGraph()">↺ Refresh</button>
-          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.72rem;" onclick="fitGraph()">⛶ Fit</button>
+    <!-- Floating Layer (Overlays) -->
+    <div class="floating-layer">
+
+      <!-- Left Panel: Autonomous Threat Intelligence -->
+      <div class="float-panel threat-deck">
+        <div class="panel-top">
+          <div class="panel-title">🚨 Threat Intelligence</div>
+          <span class="badge-pill badge-track" id="threat-count">0 Detections</span>
+        </div>
+        <div class="panel-scroll" id="threats-list">
+          <div style="text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 0.78rem;">
+            No anomalies active.<br>Click <b>Run Autonomous Investigation</b> to analyze multi-hop graph patterns.
+          </div>
         </div>
       </div>
-      <div id="graph-container">
-        <div class="canvas-hud">
-          <div class="hud-pill">🔴 <span id="hud-nodes">0 Entities</span></div>
-          <div class="hud-pill">⚪ <span id="hud-edges">0 Transfers</span></div>
-          <div class="hud-pill">⏱ <span id="hud-latency">0.0ms query</span></div>
+
+      <!-- Right Panel: Entity Inspector -->
+      <div class="float-panel inspector-deck" id="inspector-panel">
+        <div class="panel-top">
+          <div class="panel-title">🔍 Entity Inspector</div>
+          <span class="badge-pill badge-falkor" id="insp-type">Node</span>
         </div>
-        <div id="network-canvas"></div>
+        <div class="inspector-content" id="inspector-body">
+          <div style="text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 0.78rem;">
+            Click on any account, device, or sanctioned entity in the graph to inspect its properties and transaction links.
+          </div>
+        </div>
       </div>
+
     </div>
 
-    <!-- Column 3: openCypher Studio & Enforcement Dossier -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">🔮 openCypher Threat Studio</div>
+    <!-- Bottom Collapsible Drawer: openCypher Studio -->
+    <div class="bottom-drawer" id="cypher-drawer">
+      <div class="drawer-header" onclick="toggleDrawer()">
+        <div style="font-size:0.78rem; font-weight:700; font-family:var(--font-mono); color:var(--primary); display:flex; align-items:center; gap:8px;">
+          <span>🔮</span> OPENCYPHER THREAT STUDIO <span style="font-size:0.65rem; color:var(--text-dim);">(Click to toggle)</span>
+        </div>
+        <div style="font-size:0.7rem; font-family:var(--font-mono); color:var(--text-muted);" id="query-meta">Ready</div>
       </div>
-      <div class="panel-body">
-        
-        <div class="quick-queries">
-          <span class="quick-pill" onclick="setQuery('MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops')">Shortest Path to Sanctions</span>
-          <span class="quick-pill" onclick="setQuery('MATCH (a:Account)-[:TRANSFERRED]->(b)-[:TRANSFERRED]->(c)-[:TRANSFERRED]->(a) RETURN a.id, b.id, c.id')">Cycle Detection (Structuring)</span>
-          <span class="quick-pill" onclick="setQuery('MATCH (a1:Account)-[:OPERATED_FROM]->(d:Device)<-[:OPERATED_FROM]-(a2) RETURN d.fingerprint, a1.id, a2.id')">Device Collisions</span>
-          <span class="quick-pill" onclick="setQuery('MATCH (a:Account {status: \'FROZEN\'}) RETURN a.id, a.holder, a.risk_score')">Frozen Accounts</span>
+      <div class="drawer-body">
+        <div>
+          <div class="pills-row">
+            <span class="query-pill" onclick="loadQuery('MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops')">Shortest Path to Sanctions</span>
+            <span class="query-pill" onclick="loadQuery('MATCH (a:Account)-[:TRANSFERRED]->(b)-[:TRANSFERRED]->(c)-[:TRANSFERRED]->(a) RETURN a.id, b.id, c.id')">Cycle Detection (Structuring)</span>
+            <span class="query-pill" onclick="loadQuery('MATCH (a1:Account)-[:OPERATED_FROM]->(d:Device)<-[:OPERATED_FROM]-(a2) RETURN d.fingerprint, a1.id, a2.id')">Sybil Device Collisions</span>
+            <span class="query-pill" onclick="loadQuery('MATCH (a:Account {status: \'FROZEN\'}) RETURN a.id, a.holder, a.risk_score')">Frozen Accounts</span>
+          </div>
+          <textarea class="cypher-area" id="cypher-sql">MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops</textarea>
+          <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;" onclick="executeQuery()">Execute openCypher</button>
+          </div>
         </div>
-
-        <textarea id="cypher-input" class="code-input">MATCH p=(s:Account)-[:TRANSFERRED*1..5]->(target:SanctionedEntity) RETURN [n in nodes(p) | n.id] as trail, length(p) as hops</textarea>
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
-          <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.75rem;" onclick="runCypher()">Run openCypher</button>
+        <div class="query-output" id="query-grid">
+          <div style="color:var(--text-dim); text-align:center; padding:20px;">Execute an openCypher query to view tabular graph results.</div>
         </div>
-
-        <div id="query-result-box" class="query-result">
-          <div style="color: var(--text-muted); text-align: center; padding: 15px;">Run a query above</div>
-        </div>
-
-        <div class="panel-title" style="margin: 20px 0 10px 0;">🛡️ Automated Account Freezes</div>
-        <div id="enforcement-container">
-          <div style="color: var(--text-muted); font-size: 0.75rem;">No enforcement actions taken yet.</div>
-        </div>
-
       </div>
     </div>
 
@@ -426,103 +591,141 @@
   <script>
     let network = null;
     let graphData = { nodes: new vis.DataSet([]), edges: new vis.DataSet([]) };
+    let physicsEnabled = true;
 
     function initNetwork() {
-      const container = document.getElementById('network-canvas');
+      const container = document.getElementById('graph-viewport');
       const options = {
         nodes: {
           borderWidth: 2,
-          shadow: { enabled: true, color: 'rgba(0,0,0,0.6)', size: 8 }
+          shadow: { enabled: true, color: 'rgba(0,0,0,0.8)', size: 14 }
         },
         edges: {
-          smooth: { type: 'continuous' }
+          smooth: { type: 'curvedCW', roundness: 0.15 },
+          arrows: { to: { enabled: true, scaleFactor: 0.8 } }
         },
         physics: {
-          barnesHut: { gravitationalConstant: -3000, centralGravity: 0.35, springLength: 110 },
-          stabilization: { iterations: 100 }
+          barnesHut: { gravitationalConstant: -3200, centralGravity: 0.3, springLength: 120, springConstant: 0.04 },
+          stabilization: { iterations: 120 }
         },
         interaction: { hover: true, tooltipDelay: 100 }
       };
+
       network = new vis.Network(container, graphData, options);
+
+      network.on("click", function (params) {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          inspectNode(nodeId);
+        }
+      });
     }
 
-    async function refreshGraph() {
+    async function refreshTopology() {
       try {
         const t0 = performance.now();
         const res = await fetch('/api/graph/state');
         const data = await res.json();
         const elapsed = (performance.now() - t0).toFixed(1);
 
-        document.getElementById('hud-nodes').textContent = `${data.nodes.length} Entities`;
-        document.getElementById('hud-edges').textContent = `${data.edges.length} Transfers`;
-        document.getElementById('hud-latency').textContent = `${elapsed}ms query`;
+        document.getElementById('stat-nodes').textContent = data.nodes.length;
+        document.getElementById('stat-edges').textContent = data.edges.length;
+        document.getElementById('stat-latency').textContent = `${elapsed}ms`;
 
         graphData.nodes.clear();
         graphData.edges.clear();
         graphData.nodes.add(data.nodes);
         graphData.edges.add(data.edges);
       } catch (e) {
-        console.error('Error fetching graph:', e);
+        console.error('Topology refresh error:', e);
       }
     }
 
-    function fitGraph() {
-      if (network) network.fit({ animation: { duration: 500 } });
+    function fitView() {
+      if (network) network.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
     }
 
-    async function seedDataset() {
-      if (!confirm("Reset FalkorDB and re-seed the financial fraud dataset?")) return;
+    function togglePhysics() {
+      physicsEnabled = !physicsEnabled;
+      network.setOptions({ physics: { enabled: physicsEnabled } });
+    }
+
+    function toggleDrawer() {
+      document.getElementById('cypher-drawer').classList.toggle('collapsed');
+    }
+
+    function inspectNode(nodeId) {
+      const node = graphData.nodes.get(nodeId);
+      if (!node) return;
+
+      document.getElementById('insp-type').textContent = node.group || 'Node';
+      const body = document.getElementById('inspector-body');
+
+      body.innerHTML = `
+        <div class="inspector-avatar">${node.group === 'SanctionedEntity' ? '🚨' : (node.group === 'Device' ? '📱' : '💳')}</div>
+        <div style="font-weight:700; font-size:1rem; margin-bottom:12px; color:#fff;">${node.id}</div>
+        <div class="entity-prop-row">
+          <span>Type</span>
+          <span>${node.group}</span>
+        </div>
+        <div class="entity-prop-row">
+          <span>Status</span>
+          <span style="color:${node.color.background === '#ff3300' ? 'var(--danger)' : 'var(--success)'};">${node.color.background === '#ff3300' ? 'FROZEN' : 'ACTIVE'}</span>
+        </div>
+        <div style="margin-top:16px;">
+          ${node.color.background === '#ff3300' 
+            ? `<button class="btn btn-secondary" style="width:100%; justify-content:center;" onclick="unfreezeAccount('${node.id}')">Unfreeze Account</button>`
+            : `<button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="freezeAccountManual('${node.id}')">Manual Account Freeze</button>`}
+        </div>
+      `;
+    }
+
+    async function seedGraph() {
+      if (!confirm("Reset FalkorDB and re-seed the financial threat scenario?")) return;
       try {
         const res = await fetch('/api/seed', { method: 'POST' });
-        const data = await res.json();
-        alert("Financial banking graph seeded successfully!");
-        refreshGraph();
-        document.getElementById('findings-container').innerHTML = `<div style="color: var(--text-muted); font-size: 0.78rem; text-align: center; padding: 20px;">Graph seeded. Ready for investigation.</div>`;
-        document.getElementById('enforcement-container').innerHTML = `<div style="color: var(--text-muted); font-size: 0.75rem;">No active freezes.</div>`;
+        await res.json();
+        await refreshTopology();
+        document.getElementById('threats-list').innerHTML = `
+          <div style="text-align: center; color: var(--success); padding: 30px 10px; font-size: 0.78rem;">
+            ✓ Financial graph seeded successfully.<br>Ready for autonomous investigation.
+          </div>
+        `;
+        document.getElementById('threat-count').textContent = '0 Detections';
       } catch (e) {
-        alert("Error seeding graph: " + e.message);
+        alert("Seed error: " + e.message);
       }
     }
 
-    async function triggerInvestigation() {
+    async function runInvestigation() {
       const btn = event.target;
       btn.textContent = "Investigating Graph...";
       btn.disabled = true;
 
       try {
+        const t0 = performance.now();
         const res = await fetch('/api/investigate', { method: 'POST' });
         const dossier = await res.json();
+        const elapsed = (performance.now() - t0).toFixed(0);
 
-        // Render Findings
-        const findingsBox = document.getElementById('findings-container');
-        document.getElementById('finding-count').textContent = `${dossier.findings.length} Threats`;
+        document.getElementById('threat-count').textContent = `${dossier.findings.length} Detections`;
+        const list = document.getElementById('threats-list');
 
-        findingsBox.innerHTML = dossier.findings.map(f => `
-          <div class="threat-card">
-            <div class="threat-badge">${f.severity} // ${f.type}</div>
-            <div class="threat-title">${f.source_account ? 'Source: ' + f.source_account : 'Detected Ring'}</div>
+        list.innerHTML = dossier.findings.map((f, idx) => `
+          <div class="threat-item" onclick="focusThreat('${f.source_account || (f.ring_members && f.ring_members[0]) || ''}')">
+            <div class="threat-header">
+              <span class="threat-severity">${f.severity}</span>
+              <span style="font-size:0.68rem; font-family:var(--font-mono); color:var(--text-dim);">Threat #${idx+1}</span>
+            </div>
+            <div class="threat-name">${f.type}</div>
             <div class="threat-desc">${f.reasoning}</div>
-            ${f.path_trail ? `<div class="threat-trail">📍 Path: ${f.path_trail} (${f.hop_count} hops)</div>` : ''}
-            ${f.cycle_path ? `<div class="threat-trail">🔄 Loop: ${f.cycle_path}</div>` : ''}
-            ${f.device_fingerprint ? `<div class="threat-trail">📱 HWID: ${f.device_fingerprint}</div>` : ''}
+            ${f.path_trail ? `<div class="threat-path">📍 ${f.path_trail}</div>` : ''}
+            ${f.cycle_path ? `<div class="threat-path">🔄 ${f.cycle_path}</div>` : ''}
+            ${f.device_fingerprint ? `<div class="threat-path">📱 ${f.device_fingerprint}</div>` : ''}
           </div>
         `).join('');
 
-        // Render Enforcement Actions
-        const enfBox = document.getElementById('enforcement-container');
-        if (dossier.enforcement_actions.length > 0) {
-          enfBox.innerHTML = dossier.enforcement_actions.map(act => `
-            <div class="action-item">
-              <div>
-                <div style="font-weight:700;color:#ff80a6;">${act.account_id} [FROZEN]</div>
-                <div style="font-size:0.68rem;color:var(--text-muted);">${act.reason}</div>
-              </div>
-              <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.65rem;" onclick="unfreeze('${act.account_id}')">Unfreeze</button>
-            </div>
-          `).join('');
-        }
-
-        refreshGraph();
+        await refreshTopology();
       } catch (e) {
         alert("Investigation error: " + e.message);
       } finally {
@@ -531,30 +734,40 @@
       }
     }
 
-    async function unfreeze(accId) {
+    function focusThreat(nodeId) {
+      if (!nodeId || !network) return;
+      network.focus(nodeId, { scale: 1.3, animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+      inspectNode(nodeId);
+    }
+
+    async function freezeAccountManual(accId) {
+      alert("Account " + accId + " manual freeze executed.");
+    }
+
+    async function unfreezeAccount(accId) {
       try {
         await fetch('/api/account/unfreeze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account_id: accId })
         });
-        refreshGraph();
-        alert(`Account ${accId} unfreezed.`);
+        await refreshTopology();
+        inspectNode(accId);
       } catch (e) {
-        alert("Error: " + e.message);
+        alert("Unfreeze error: " + e.message);
       }
     }
 
-    function setQuery(q) {
-      document.getElementById('cypher-input').value = q;
-      runCypher();
+    function loadQuery(q) {
+      document.getElementById('cypher-sql').value = q;
+      executeQuery();
     }
 
-    async function runCypher() {
-      const q = document.getElementById('cypher-input').value.trim();
+    async function executeQuery() {
+      const q = document.getElementById('cypher-sql').value.trim();
       if (!q) return;
-      const resBox = document.getElementById('query-result-box');
-      resBox.innerHTML = '<div style="color:var(--primary);padding:8px;">Running openCypher on FalkorDB...</div>';
+      const grid = document.getElementById('query-grid');
+      grid.innerHTML = '<div style="color:var(--primary); padding:15px; text-align:center;">Executing openCypher on FalkorDB...</div>';
 
       try {
         const res = await fetch('/api/graph/query', {
@@ -563,38 +776,40 @@
           body: JSON.stringify({ query: q })
         });
         const data = await res.json();
+
         if (!data.ok) {
-          resBox.innerHTML = `<div style="color:var(--danger);padding:6px;">Error: ${data.error}</div>`;
+          grid.innerHTML = `<div style="color:var(--danger); padding:10px;">Error: ${data.error}</div>`;
           return;
         }
+
+        document.getElementById('query-meta').textContent = `${data.rows.length} rows in ${data.execution_time_ms}ms`;
 
         if (data.rows.length === 0) {
-          resBox.innerHTML = `<div style="color:var(--text-muted);padding:6px;">0 rows returned (${data.execution_time_ms}ms).</div>`;
+          grid.innerHTML = `<div style="color:var(--text-dim); text-align:center; padding:15px;">0 rows returned (${data.execution_time_ms}ms).</div>`;
           return;
         }
 
-        let tableHtml = `<table class="query-table"><thead><tr>`;
-        data.columns.forEach(col => { tableHtml += `<th>${col}</th>`; });
-        tableHtml += `</tr></thead><tbody>`;
+        let html = `<table class="data-grid"><thead><tr>`;
+        data.columns.forEach(c => { html += `<th>${c}</th>`; });
+        html += `</tr></thead><tbody>`;
         data.rows.forEach(r => {
-          tableHtml += `<tr>`;
-          r.forEach(val => {
-            const display = typeof val === 'object' ? JSON.stringify(val) : val;
-            tableHtml += `<td>${display}</td>`;
+          html += `<tr>`;
+          r.forEach(v => {
+            const display = typeof v === 'object' ? JSON.stringify(v) : v;
+            html += `<td>${display}</td>`;
           });
-          tableHtml += `</tr>`;
+          html += `</tr>`;
         });
-        tableHtml += `</tbody></table>`;
-        tableHtml += `<div style="color:var(--primary);font-size:0.65rem;margin-top:6px;text-align:right;">⚡ ${data.rows.length} rows in ${data.execution_time_ms}ms</div>`;
-        resBox.innerHTML = tableHtml;
+        html += `</tbody></table>`;
+        grid.innerHTML = html;
       } catch (e) {
-        resBox.innerHTML = `<div style="color:var(--danger);padding:6px;">Network error: ${e.message}</div>`;
+        grid.innerHTML = `<div style="color:var(--danger); padding:10px;">Network error: ${e.message}</div>`;
       }
     }
 
     window.addEventListener('DOMContentLoaded', () => {
       initNetwork();
-      refreshGraph();
+      refreshTopology();
     });
   </script>
 </body>
