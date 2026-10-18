@@ -63,12 +63,12 @@ def seed_fraud_dataset(graph: FalkorFraudGraph = None) -> Dict[str, Any]:
     CREATE (m2:Account {id: 'ACC_MULE_BETA', holder: 'Viktor Kozlov', balance: 22000, status: 'ACTIVE', risk_score: 80})
     CREATE (shell:Account {id: 'ACC_PANAMA_SHELL', holder: 'Aegis Holding Corp Panama', balance: 150000, status: 'ACTIVE', risk_score: 88})
 
-    CREATE (v)-[:TRANSFERRED {amount: 48000, timestamp: timestamp() - 3600}]->(m1)
-    CREATE (m1)-[:TRANSFERRED {amount: 24000, timestamp: timestamp() - 2400}]->(m2)
-    CREATE (m2)-[:TRANSFERRED {amount: 23500, timestamp: timestamp() - 1200}]->(shell)
+    CREATE (v)-[:TRANSFERRED {amount: 48000, timestamp: timestamp() - 3600000}]->(m1)
+    CREATE (m1)-[:TRANSFERRED {amount: 24000, timestamp: timestamp() - 2400000}]->(m2)
+    CREATE (m2)-[:TRANSFERRED {amount: 23500, timestamp: timestamp() - 1200000}]->(shell)
     WITH shell
     MATCH (s1:SanctionedEntity {id: 'SANCTION_HYDRA_EXCHANGE'})
-    CREATE (shell)-[:TRANSFERRED {amount: 23000, timestamp: timestamp() - 300}]->(s1)
+    CREATE (shell)-[:TRANSFERRED {amount: 23000, timestamp: timestamp() - 300000}]->(s1)
     """
     graph.query(cypher_smurfing)
 
@@ -105,6 +105,50 @@ def seed_fraud_dataset(graph: FalkorFraudGraph = None) -> Dict[str, Any]:
     """
     graph.query(cypher_devices)
 
+    # 6. Realism & Decoys: Legitimate Corporate Cycle & Shared Family/Office Tablet
+    # Decoy 1: Legitimate vendor escrow cycle (low risk, legitimate merchants)
+    cypher_decoys = """
+    CREATE (v1:Account {id: 'ACC_MERCHANT_CORP', holder: 'Retail Group LLC', balance: 120000, status: 'ACTIVE', risk_score: 5})
+    CREATE (v2:Account {id: 'ACC_SUPPLIER_GMBH', holder: 'Precision Parts GmbH', balance: 85000, status: 'ACTIVE', risk_score: 5})
+    CREATE (v3:Account {id: 'ACC_ESCROW_SERVICES', holder: 'Global Escrow Trust', balance: 450000, status: 'ACTIVE', risk_score: 2})
+    CREATE (v1)-[:TRANSFERRED {amount: 15000, timestamp: timestamp() - 86400000}]->(v2)
+    CREATE (v2)-[:TRANSFERRED {amount: 14800, timestamp: timestamp() - 86000000}]->(v3)
+    CREATE (v3)-[:TRANSFERRED {amount: 14500, timestamp: timestamp() - 85000000}]->(v1)
+
+    // Decoy 2: Legitimate retail store kiosk / branch tablet (2 verified accounts, low risk)
+    CREATE (d_kiosk:Device {fingerprint: 'DEV_KIOSK_BRANCH_07', os: 'iOS 17.5', model: 'iPad Air Kiosk'})
+    CREATE (k1:Account {id: 'ACC_RETAIL_CUST_A', holder: 'Emma Wilson', balance: 4200, status: 'ACTIVE', risk_score: 5})
+    CREATE (k2:Account {id: 'ACC_RETAIL_CUST_B', holder: 'Liam Martinez', balance: 3100, status: 'ACTIVE', risk_score: 8})
+    CREATE (k1)-[:OPERATED_FROM]->(d_kiosk)
+    CREATE (k2)-[:OPERATED_FROM]->(d_kiosk)
+    """
+    graph.query(cypher_decoys)
+
+    # 7. Background Noise Generator: 60 Realistic Banking Accounts & Scatter Transfers
+    cypher_noise = """
+    UNWIND range(1, 60) AS i
+    CREATE (a:Account {
+        id: 'ACC_RETAIL_' + i,
+        holder: 'Retail Customer ' + i,
+        balance: 1000 + (i * 230),
+        status: 'ACTIVE',
+        risk_score: toInteger(rand() * 25)
+    })
+    """
+    graph.query(cypher_noise)
+
+    cypher_noise_edges = """
+    MATCH (a:Account)
+    WHERE a.id STARTS WITH 'ACC_RETAIL_' AND toInteger(split(a.id, '_')[2]) < 55
+    WITH a, toInteger(split(a.id, '_')[2]) AS i
+    MATCH (b:Account {id: 'ACC_RETAIL_' + (i + 1)})
+    CREATE (a)-[:TRANSFERRED {
+        amount: toInteger(50 + rand() * 950),
+        timestamp: timestamp() - toInteger(rand() * 10000000)
+    }]->(b)
+    """
+    graph.query(cypher_noise_edges)
+
     print("[OmniTrace] Synthetic financial dataset successfully loaded into FalkorDB!")
     return {
         "status": "success",
@@ -112,7 +156,9 @@ def seed_fraud_dataset(graph: FalkorFraudGraph = None) -> Dict[str, Any]:
             "OFAC Sanctions Multi-Hop Trail (4 hops)",
             "Circular Structuring Loop (3 nodes)",
             "Sybil Hardware Fingerprint Farm (3 mules, 1 device, 1 VPN IP)",
-            "Legitimate background accounts",
+            "Decoy: Legitimate Corporate Settlement Cycle (3 nodes)",
+            "Decoy: Legitimate Branch Kiosk Tablet (2 accounts)",
+            "60 Background Retail Accounts with Random Inter-Account Transfers",
         ]
     }
 

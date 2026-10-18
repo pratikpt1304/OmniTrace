@@ -1,0 +1,29 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: omnitrace-falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb-data:/data
+    restart: unless-stopped
+
+  omnitrace:
+    build: .
+    container_name: omnitrace-app
+    ports:
+      - "8765:8765"
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_GRAPH=omnitrace_fraud_mesh
+      - FALKORDB_SSL=false
+      - AGENT_MODE=rules
+      - AUTO_FREEZE=false
+      - PORT=8765
+    depends_on:
+      - falkordb
+    restart: unless-stopped
+
+volumes:
+  falkordb-data:

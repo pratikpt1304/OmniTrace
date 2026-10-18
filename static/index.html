@@ -11,64 +11,72 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- Favicon -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23ff2d55'/><path d='M12 2L2 7l10 5 10-5-10-5z' fill='%23ffffff'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%230284c7'/><path d='M12 2L2 7l10 5 10-5-10-5z' fill='%23ffffff'/></svg>">
   
-  <!-- Vis.js Standalone Network Engine -->
-  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <!-- Vis.js Standalone Network Engine (Vendored local with CDN fallback) -->
+  <script src="/static/vendor/vis-network.min.js"></script>
+  <script>if (typeof vis === 'undefined') document.write('<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"><\/script>');</script>
   
-  <!-- Custom Cyber SOC Stylesheet -->
+  <!-- Enterprise Light Theme Stylesheet -->
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <!-- Ambient Grid & Glow Background -->
-  <div class="bg-grid"></div>
 
-  <!-- TOP BAR: Brand, Health Telemetry, and Action Center -->
+  <!-- TOP BAR: Brand, Health Telemetry, and Actions -->
   <header>
     <div class="brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          <path d="m9 12 2 2 4-4"></path>
         </svg>
       </div>
-      <div class="brand-text">
-        <h1>
-          OMNITRACE
-          <span class="brand-badge">TRACK 01</span>
-        </h1>
-        <div class="brand-sub">Autonomous Graph Threat Cockpit • FalkorDB Cloud</div>
+      <div class="brand-title">
+        <div class="brand-title-row">
+          <h1>OmniTrace</h1>
+          <span class="brand-badge">Track 01</span>
+        </div>
+        <div class="brand-sub">Autonomous Graph Threat Intelligence • FalkorDB</div>
       </div>
     </div>
 
-    <!-- Live Status & In-Memory Metrics -->
+    <!-- Live Status & Telemetry Metrics -->
     <div class="nav-status">
-      <div class="status-pill">
+      <div class="status-pill" id="health-status-pill">
         <span class="status-dot" id="status-dot"></span>
-        <span id="status-text">CONNECTING...</span>
+        <span id="status-text">Connecting...</span>
       </div>
 
-      <div class="db-metric-pill">
-        <span>NODES:</span> <span id="header-node-count">0</span>
+      <div class="metric-pill" id="ai-mode-pill">
+        <span>AI:</span>
+        <span class="val" id="ai-mode-badge">Claude</span>
       </div>
-      <div class="db-metric-pill">
-        <span>EDGES:</span> <span id="header-edge-count">0</span>
+
+      <div class="metric-pill">
+        <span>Nodes:</span>
+        <span class="val" id="header-node-count">--</span>
       </div>
-      <div class="db-metric-pill">
-        <span>LATENCY:</span> <span>&lt; 1ms</span>
+
+      <div class="metric-pill">
+        <span>Edges:</span>
+        <span class="val" id="header-edge-count">--</span>
+      </div>
+
+      <div class="metric-pill" id="pill-engine-latency" style="display:none;">
+        <span>Engine:</span>
+        <span class="val" id="header-engine-latency">--</span>
+      </div>
+
+      <div class="metric-pill" id="pill-roundtrip-latency" style="display:none;">
+        <span>Roundtrip:</span>
+        <span class="val" id="header-roundtrip-latency">--</span>
       </div>
     </div>
 
-    <!-- Actions -->
+    <!-- Actions Center -->
     <div class="nav-actions">
-      <button class="btn btn-demo" id="btn-demo-mode" title="Run automatic 2-minute narrated demo">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        Demo Mode (2m)
-      </button>
-
-      <button class="btn btn-secondary" id="btn-seed-data">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button class="btn btn-secondary" id="btn-seed-data" aria-label="Seed synthetic fraud graph dataset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
           <path d="M3 3v5h5"></path>
           <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
@@ -77,80 +85,113 @@
         Seed Data
       </button>
 
-      <button class="btn btn-primary" id="btn-run-investigation">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
-          <line x1="12" y1="9" x2="12" y2="13"></line>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      <button class="btn btn-primary" id="btn-live-stream" aria-label="Run autonomous AI investigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
         Run Investigation
+      </button>
+
+      <button class="btn btn-secondary" id="btn-presentation-mode" title="Run 2-minute real guided demonstration">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="10 8 16 12 10 16 10 8"></polygon>
+        </svg>
+        Presentation Mode (2m)
+      </button>
+
+      <button class="btn btn-cancel" id="btn-cancel-stream" title="Cancel running investigation" aria-label="Cancel investigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        Cancel
       </button>
     </div>
   </header>
 
-  <!-- MAIN COCKPIT: 3 COLUMNS -->
+  <!-- MAIN COCKPIT CONTAINER: 3 COLUMNS -->
   <div class="cockpit-container">
     
-    <!-- LEFT PANEL: AGENT INVESTIGATION FEED -->
-    <aside class="left-panel">
+    <!-- LEFT PANEL: INVESTIGATION FEED -->
+    <aside class="left-panel" aria-label="Investigation Feed">
       <div class="panel-header">
         <div class="panel-title">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          AGENT DOSSIER FEED
+          Investigation Feed
         </div>
-        <span class="badge-counter" id="threat-count-badge">0 THREATS</span>
+        <div class="header-action-group">
+          <button id="btn-export-html" class="btn-xs" title="Export printable compliance HTML dossier">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Report
+          </button>
+          <button id="btn-export-json" class="btn-xs" title="Download JSON dossier">JSON</button>
+          <span class="badge-counter" id="threat-count-badge">0 Threats</span>
+        </div>
       </div>
 
       <div class="feed-content" id="threats-feed">
+        <!-- Live SSE Stream Telemetry Container -->
+        <div id="live-telemetry-container" style="display:none;"></div>
+
         <!-- Initial empty state -->
         <div class="empty-state" id="empty-feed-placeholder">
-          <div class="empty-state-icon">📡</div>
-          <div style="font-weight:700; color:#fff; font-size:0.9rem;">Cockpit Ready</div>
+          <div class="empty-state-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </div>
+          <div class="empty-state-title">No Investigation Active</div>
           <div class="empty-state-text">
-            Click <strong>Seed Data</strong> to initialize the financial graph, then click <strong>Run Investigation</strong> to begin autonomous threat hunting.
+            Click <strong>Seed Data</strong> to initialize the banking graph, then click <strong>Run Investigation</strong> to begin real-time multi-hop threat analysis.
           </div>
         </div>
       </div>
     </aside>
 
     <!-- CENTER PANEL: INTERACTIVE GRAPH RADAR -->
-    <main class="center-panel">
+    <main class="center-panel" aria-label="Interactive Graph Topology">
       <div id="vis-network-canvas"></div>
 
       <!-- Graph HUD: Search & Controls -->
       <div class="graph-hud">
         <div class="search-box">
-          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" class="search-input" id="node-search-input" placeholder="Search entity (e.g. ACC_MULE_ALPHA)..." autocomplete="off">
+          <input type="text" class="search-input" id="node-search-input" placeholder="Search entity (e.g. ACC_MULE_ALPHA)..." autocomplete="off" aria-label="Search graph entity">
           <div class="search-dropdown" id="search-dropdown"></div>
         </div>
 
         <div class="hud-actions">
-          <button class="hud-btn" id="btn-fit-screen" title="Fit all nodes in view">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="hud-btn" id="btn-fit-screen" title="Fit all nodes in view" aria-label="Fit graph to view">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
             </svg>
             Fit View
           </button>
 
-          <button class="hud-btn active" id="btn-toggle-physics" title="Toggle graph physics simulation">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="hud-btn active" id="btn-toggle-physics" title="Toggle graph physics simulation" aria-label="Toggle graph physics">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="2" x2="12" y2="6"></line>
               <line x1="12" y1="18" x2="12" y2="22"></line>
               <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
               <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-              <line x1="2" y1="12" x2="6" y2="12"></line>
-              <line x1="18" y1="12" x2="22" y2="12"></line>
             </svg>
             Physics
           </button>
@@ -160,12 +201,13 @@
       <!-- Focus Reset Banner -->
       <div class="focus-banner" id="focus-banner">
         <span id="focus-banner-text">Isolated Threat Trail</span>
-        <button id="btn-reset-focus">✕ Clear Highlight</button>
+        <button id="btn-reset-focus">Clear Highlight</button>
       </div>
 
       <!-- Floating Legend -->
-      <div class="graph-legend">
+      <div class="graph-legend" aria-label="Graph Legend">
         <div class="legend-item"><span class="legend-dot account"></span> Account</div>
+        <div class="legend-item"><span class="legend-dot flagged"></span> Flagged</div>
         <div class="legend-item"><span class="legend-dot sanctioned"></span> OFAC Target</div>
         <div class="legend-item"><span class="legend-dot frozen"></span> Frozen</div>
         <div class="legend-item"><span class="legend-dot device"></span> Device</div>
@@ -173,10 +215,10 @@
       </div>
 
       <!-- Slide-in Node Detail Drawer -->
-      <div class="node-drawer" id="node-drawer">
+      <div class="node-drawer" id="node-drawer" aria-label="Node Properties Drawer">
         <div class="drawer-header">
           <span class="drawer-title" id="drawer-node-type">Account Entity</span>
-          <button class="drawer-close" id="btn-close-drawer">✕</button>
+          <button class="drawer-close" id="btn-close-drawer" aria-label="Close drawer">✕</button>
         </div>
         <div class="drawer-node-id" id="drawer-node-id">ACC_000</div>
         
@@ -187,11 +229,11 @@
           </div>
           <div class="drawer-prop-row">
             <span class="prop-key">Risk Evaluation:</span>
-            <span class="prop-val" id="drawer-node-risk">15 / 100</span>
+            <span class="prop-val" id="drawer-node-risk">--</span>
           </div>
           <div class="drawer-prop-row">
             <span class="prop-key">Engine:</span>
-            <span class="prop-val" style="color:var(--cyan);">FalkorDB In-Memory</span>
+            <span class="prop-val" style="color:var(--sky-primary);">FalkorDB Lin-Alg</span>
           </div>
         </div>
 
@@ -199,130 +241,207 @@
       </div>
     </main>
 
-    <!-- RIGHT PANEL: TABS (METRICS / FREEZE REGISTRY / CYPHER STUDIO) -->
-    <aside class="right-panel">
+    <!-- RIGHT PANEL: TABS -->
+    <aside class="right-panel" aria-label="Details and Query Center">
       <div class="panel-tabs">
         <button class="tab-btn active" data-tab="metrics">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          Metrics
+          Overview
         </button>
 
         <button class="tab-btn" data-tab="registry">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
-          Freeze Registry
+          Frozen Accounts
         </button>
 
         <button class="tab-btn" data-tab="cypher">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="4 17 10 11 4 5"></polyline>
             <line x1="12" y1="19" x2="20" y2="19"></line>
           </svg>
           Cypher Studio
         </button>
+
+        <button class="tab-btn" data-tab="ask">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          Ask Graph
+        </button>
+
+        <button class="tab-btn" data-tab="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          History
+        </button>
       </div>
 
-      <!-- TAB 1: METRICS -->
+      <!-- TAB 1: OVERVIEW -->
       <div class="tab-pane active" id="tab-pane-metrics">
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-label">Nodes Audited</div>
-            <div class="stat-number cyan" id="stat-nodes">0</div>
+            <div class="stat-number sky" id="stat-nodes">0</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Edges Traversed</div>
-            <div class="stat-number green" id="stat-edges">0</div>
+            <div class="stat-number success" id="stat-edges">0</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Threats Caught</div>
-            <div class="stat-number red" id="stat-threats">0</div>
+            <div class="stat-number danger" id="stat-threats">0</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Accounts Frozen</div>
-            <div class="stat-number amber" id="stat-frozen">0</div>
+            <div class="stat-number warning" id="stat-frozen">0</div>
           </div>
         </div>
 
-        <div class="engine-status-card">
-          <div class="engine-status-header">
-            <span>FALKORDB ENGINE TELEMETRY</span>
-            <span style="color:var(--green); font-family:var(--font-mono);">ONLINE</span>
+        <div class="info-card">
+          <div class="info-card-header">
+            <span>FalkorDB Engine Telemetry</span>
+            <span style="color:var(--green-success); font-family:var(--font-mono); font-weight:700;">ONLINE</span>
           </div>
-          <div class="engine-metric-list">
-            <div class="engine-metric-item">
-              <span>GraphBLAS Engine</span>
-              <span>Vectorized LinAlg</span>
-            </div>
-            <div class="engine-metric-item">
-              <span>Sub-Hop Traversal</span>
-              <span style="color:var(--cyan);">&lt; 0.85 ms</span>
-            </div>
-            <div class="engine-metric-item">
-              <span>Multi-Hop Algorithm</span>
-              <span>Directed Shortest Path</span>
-            </div>
-            <div class="engine-metric-item">
-              <span>Cycle Detection</span>
-              <span>Closed Loop Match</span>
-            </div>
-            <div class="engine-metric-item">
-              <span>Enforcement Mutations</span>
-              <span style="color:var(--green);">ACID Atomic</span>
-            </div>
+          <div class="info-row">
+            <span class="info-key">Engine Architecture</span>
+            <span class="info-val">GraphBLAS Vectorized Lin-Alg</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Multi-Hop Algorithm</span>
+            <span class="info-val">Directed Shortest Path</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Cycle Detection</span>
+            <span class="info-val">Closed Loop Matrix Match</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Enforcement Mutations</span>
+            <span class="info-val" style="color:var(--green-success);">ACID Atomic</span>
+          </div>
+        </div>
+
+        <!-- Audit Blockchain Verification Card -->
+        <div class="info-card">
+          <div class="info-card-header">
+            <span>Tamper-Evident Audit Chain</span>
+            <button class="btn-xs" id="btn-verify-audit" title="Cryptographically verify SHA-256 audit blocks">Verify</button>
+          </div>
+          <div style="font-size:11px; color:var(--text-secondary); line-height:1.45; margin-bottom:8px;">
+            Every graph containment action generates an immutable <code style="font-family:var(--font-mono); background:var(--bg-subtle); padding:1px 4px; border-radius:4px;">(:EnforcementAction)</code> node chained with SHA-256 hashes.
+          </div>
+          <div id="audit-verification-result" style="font-size:11px; font-family:var(--font-mono); color:var(--text-muted);">
+            Status: Ready to verify
           </div>
         </div>
       </div>
 
-      <!-- TAB 2: FREEZE REGISTRY -->
+      <!-- TAB 2: FROZEN ACCOUNTS -->
       <div class="tab-pane" id="tab-pane-registry">
-        <div class="freeze-registry-header">
-          <span>GRAPH LOCKOUTS</span>
-          <span class="badge-counter" id="freeze-registry-count">0 FROZEN</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <span style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Graph Lockouts</span>
+          <span class="badge-counter" id="freeze-registry-count">0 Frozen</span>
         </div>
-        <div class="freeze-list" id="freeze-registry-list">
+        <div id="freeze-registry-list">
           <div class="empty-state">
-            <div class="empty-state-icon">🛡️</div>
-            <div style="font-weight:700; color:#fff;">No Frozen Accounts</div>
-            <div class="empty-state-text">No accounts locked. Run the autonomous investigation to detect and freeze compromised mules.</div>
+            <div class="empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <div class="empty-state-title">No Frozen Accounts</div>
+            <div class="empty-state-text">No accounts currently locked. Run the autonomous investigation to detect and contain compromised mules.</div>
           </div>
         </div>
       </div>
 
       <!-- TAB 3: CYPHER STUDIO -->
       <div class="tab-pane" id="tab-pane-cypher">
-        <div class="cypher-studio-container">
-          <div class="preset-pills-label">One-Click Presets</div>
-          <div class="preset-pills">
-            <button class="preset-pill" data-preset="shortest_path">Shortest Path</button>
-            <button class="preset-pill" data-preset="cycle_detection">Cycle Detection</button>
-            <button class="preset-pill" data-preset="sybil_collisions">Sybil Hardware</button>
-            <button class="preset-pill" data-preset="frozen_registry">Frozen Mules</button>
-          </div>
+        <div style="margin-bottom:8px; font-size:11px; font-weight:600; color:var(--text-muted);">One-Click Presets</div>
+        <div class="preset-pills">
+          <button class="preset-pill" data-preset="shortest_path">Shortest Path</button>
+          <button class="preset-pill" data-preset="cycle_detection">Cycle Detection</button>
+          <button class="preset-pill" data-preset="sybil_collisions">Sybil Hardware</button>
+          <button class="preset-pill" data-preset="frozen_registry">Frozen Mules</button>
+        </div>
 
-          <div class="editor-box">
-            <div class="editor-header">
-              <span>openCypher Console</span>
-              <span>Ctrl+Enter to Run</span>
-            </div>
-            <textarea class="cypher-textarea" id="cypher-editor" spellcheck="false" placeholder="Enter openCypher query...">MATCH (n) RETURN labels(n)[0] AS type, count(n) AS count;</textarea>
-            <div class="editor-footer">
-              <span class="query-telemetry" id="cypher-telemetry">Ready</span>
-              <button class="btn btn-secondary" id="btn-run-cypher" style="padding:4px 10px; font-size:0.72rem;">
-                ▶ Run Query
-              </button>
-            </div>
+        <div class="editor-box">
+          <div class="editor-header">
+            <span>openCypher Console</span>
+            <span>Ctrl+Enter to Run</span>
           </div>
+          <textarea class="cypher-textarea" id="cypher-editor" spellcheck="false" placeholder="Enter openCypher query...">MATCH (n) RETURN labels(n)[0] AS type, count(n) AS count;</textarea>
+          <div class="editor-footer">
+            <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);" id="cypher-telemetry">Ready</span>
+            <button class="btn btn-secondary" id="btn-run-cypher" style="height:28px; padding:0 10px; font-size:11px;">
+              Run Query
+            </button>
+          </div>
+        </div>
 
-          <div class="results-table-container" id="cypher-results-table">
-            <div style="padding:30px; text-align:center; color:#64748b; font-family:'JetBrains Mono'; font-size:11px;">
-              Click "Run Query" or a preset pill above to view FalkorDB tabular results.
+        <div class="results-table-container" id="cypher-results-table">
+          <div style="padding:30px; text-align:center; color:var(--text-muted); font-size:11px;">
+            Click "Run Query" or a preset pill above to view tabular results.
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: ASK GRAPH (GraphRAG) -->
+      <div class="tab-pane" id="tab-pane-ask">
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:10px; line-height:1.45;">
+          Ask questions in plain English or Hinglish. FalkorDB schema is introspected to synthesize verified read-only openCypher.
+        </div>
+        <div class="preset-pills">
+          <button class="preset-pill" onclick="setRagQuestion('How did money reach Hydra Exchange?')">Hydra Trail</button>
+          <button class="preset-pill" onclick="setRagQuestion('Show circular money laundering rings')">Cycles</button>
+          <button class="preset-pill" onclick="setRagQuestion('Which accounts share devices?')">Sybil Devices</button>
+          <button class="preset-pill" onclick="setRagQuestion('Kaise transfer hua Hydra tak?')">Hinglish</button>
+        </div>
+        <div style="display:flex; gap:6px; margin-bottom:12px;">
+          <input type="text" id="rag-question-input" class="search-input" style="flex:1;" placeholder="Ask graph in English or Hinglish...">
+          <button class="btn btn-primary" id="btn-submit-rag" style="height:34px;">Ask</button>
+        </div>
+        <div id="rag-response-container" style="display:none; flex-direction:column; gap:10px;">
+          <div class="rag-summary-card">
+            <div class="rag-summary-title">AI Summary</div>
+            <div class="rag-summary-text" id="rag-summary-text"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">
+            <span>Synthesized openCypher:</span>
+            <span id="rag-timing-badge" style="color:var(--green-success); font-weight:600;"></span>
+          </div>
+          <pre id="rag-cypher-code" style="background:#FFFFFF; border:1px solid var(--border-light); border-radius:var(--radius-md); padding:8px 10px; font-family:var(--font-mono); font-size:11px; color:var(--text-primary); overflow-x:auto; max-height:80px;"></pre>
+          <div class="results-table-container" id="rag-results-table" style="max-height:160px;"></div>
+        </div>
+      </div>
+
+      <!-- TAB 5: HISTORY (GRAPH MEMORY) -->
+      <div class="tab-pane" id="tab-pane-history">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <span style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">FalkorDB Graph Memory</span>
+          <button class="btn-xs" id="btn-refresh-history">Refresh</button>
+        </div>
+        <div id="investigations-history-list" style="display:flex; flex-direction:column; gap:10px;">
+          <div class="empty-state">
+            <div class="empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
             </div>
+            <div class="empty-state-title">Agent Memory Active</div>
+            <div class="empty-state-text">Past runs are stored as (:Investigation) nodes linked to examined accounts and findings.</div>
           </div>
         </div>
       </div>
@@ -331,16 +450,16 @@
 
   </div>
 
-  <!-- Live Toast Container -->
-  <div id="toast-container"></div>
+  <!-- Live Toast Notifications Container -->
+  <div id="toast-container" aria-live="polite"></div>
 
-  <!-- Demo Mode Narration Banner -->
-  <div class="demo-banner" id="demo-banner">
-    <span class="demo-pulse"></span>
-    <span id="demo-narration-text">Demo Mode Active</span>
+  <!-- Presentation Mode Narration Banner -->
+  <div class="demo-banner" id="demo-banner" role="status">
+    <span class="live-pulse-dot"></span>
+    <span id="demo-narration-text">Presentation Mode Active</span>
   </div>
 
-  <!-- Main JavaScript Logic -->
+  <!-- Main JavaScript Engine -->
   <script src="/static/app.js"></script>
 </body>
 </html>

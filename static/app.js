@@ -1,9 +1,10 @@
 /**
- * OmniTrace Threat Cockpit — Frontend Architecture & State Engine
+ * OmniTrace Threat Cockpit — Enterprise Light Theme Engine
  * FalkorDB Graph Hacks (Track 01: Agents That Act on Connected Data)
+ * Real-time SSE Agent Investigator, Vis-Network Canvas & GraphRAG Studio
  */
 
-// State Container
+// Global State
 const state = {
   network: null,
   rawNodes: [],
@@ -14,23 +15,67 @@ const state = {
   activeDossier: null,
   frozenAccounts: new Set(),
   focusedThreatId: null,
-  isInvestigating: false,
-  isDemoRunning: false,
+  isStreaming: false,
+  activeStream: null,
+  liveFindings: [],
+  liveActions: [],
   apiConnected: false,
+  lastEngineMs: null,
+  lastRoundtripMs: null,
+  displayedCounts: { nodes: 0, edges: 0, threats: 0, frozen: 0 },
 };
 
 // ============================================================================
 // 1. INITIALIZATION & NETWORK SETUP
 // ============================================================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initVisNetwork();
   setupEventListeners();
   checkApiHealth();
-  refreshGraphData();
+  await refreshGraphData();
+  await checkAndLoadLatestDossier();
 
   // Periodic health check
   setInterval(checkApiHealth, 15000);
 });
+
+async function checkAndLoadLatestDossier() {
+  try {
+    const res = await fetch('/api/dossiers');
+    const data = await res.json();
+    if (data && data.dossiers && data.dossiers.length > 0) {
+      const latest = data.dossiers[0];
+      const invId = latest.investigation_id;
+      if (invId) {
+        const dRes = await fetch(`/api/dossiers/${encodeURIComponent(invId)}`);
+        const dossier = await dRes.json();
+        if (dossier && dossier.findings) {
+          state.activeDossier = dossier;
+          state.liveFindings = [];
+          state.liveActions = dossier.proposed_actions || [];
+
+          const liveContainer = document.getElementById('live-stream-container');
+          if (liveContainer) liveContainer.style.display = 'flex';
+          const placeholder = document.getElementById('empty-feed-placeholder');
+          if (placeholder) placeholder.style.display = 'none';
+
+          const findingsList = document.getElementById('live-findings-list');
+          if (findingsList) findingsList.innerHTML = '';
+          (dossier.findings || []).forEach((f) => addFindingDeduplicated(f));
+
+          const streamLabel = document.getElementById('live-stream-label');
+          if (streamLabel) {
+            streamLabel.textContent = `DOSSIER LOADED (${invId})`;
+            streamLabel.style.color = 'var(--text-primary)';
+          }
+          updateMetricsTab();
+        }
+      }
+    }
+  } catch (e) {
+    // Graceful no-op if dossiers unavailable
+  }
+}
 
 function initVisNetwork() {
   const container = document.getElementById('vis-network-canvas');
@@ -45,36 +90,45 @@ function initVisNetwork() {
   const options = {
     nodes: {
       font: {
-        face: 'JetBrains Mono, monospace',
-        color: '#f8fafc',
+        face: 'Inter, -apple-system, sans-serif',
+        color: '#0B0F14',
         size: 11,
+        strokeWidth: 2,
+        strokeColor: '#FFFFFF',
       },
       borderWidth: 2,
       shadow: {
         enabled: true,
-        color: 'rgba(0, 0, 0, 0.6)',
-        size: 10,
+        color: 'rgba(11, 15, 20, 0.08)',
+        size: 8,
         x: 0,
-        y: 4,
+        y: 2,
       },
     },
     edges: {
       arrows: {
-        to: { enabled: true, scaleFactor: 0.75 },
+        to: { enabled: true, scaleFactor: 0.65 },
+      },
+      color: {
+        color: '#CBD5E1',
+        highlight: '#0284C7',
+        hover: '#0284C7',
       },
       font: {
         face: 'JetBrains Mono, monospace',
         size: 9,
-        color: '#94a3b8',
+        color: '#64748B',
         align: 'middle',
-        background: 'rgba(9, 12, 21, 0.75)',
-        strokeWidth: 0,
+        background: 'transparent',
+        strokeWidth: 2,
+        strokeColor: '#FFFFFF',
       },
       smooth: {
         type: 'cubicBezier',
         forceDirection: 'none',
         roundness: 0.25,
       },
+      width: 1.2,
     },
     physics: {
       enabled: true,
@@ -95,52 +149,63 @@ function initVisNetwork() {
     },
     interaction: {
       hover: true,
-      tooltipDelay: 150,
-      zoomView: true,
-      dragView: true,
-      selectConnectedEdges: true,
+      tooltipDelay: 120,
+      hideEdgesOnDrag: false,
+      keyboard: false,
     },
   };
 
   state.network = new vis.Network(container, data, options);
 
-  // Network Event Listeners
+  // Network Event Handlers
   state.network.on('click', (params) => {
     if (params.nodes.length > 0) {
-      const selectedId = params.nodes[0];
-      inspectNode(selectedId);
+      inspectNode(params.nodes[0]);
     } else {
       closeNodeDrawer();
     }
   });
 
-  state.network.on('hoverNode', () => {
-    container.style.cursor = 'pointer';
-  });
-  state.network.on('blurNode', () => {
-    container.style.cursor = 'default';
+  state.network.on('doubleClick', (params) => {
+    if (params.nodes.length > 0) {
+      focusSingleNode(params.nodes[0]);
+    }
   });
 }
 
 // ============================================================================
-// 2. API CALLS & DATA REFRESH
+// 2. DATA SYNCHRONIZATION & HEALTH TELEMETRY
 // ============================================================================
 async function checkApiHealth() {
-  const dot = document.getElementById('status-dot');
-  const text = document.getElementById('status-text');
   try {
-    const res = await fetch('/api/graph/state');
+    const res = await fetch('/api/health');
+    const dot = document.getElementById('status-dot');
+    const text = document.getElementById('status-text');
+    const modeBadge = document.getElementById('ai-mode-badge');
+
     if (res.ok) {
+      const data = await res.json();
       state.apiConnected = true;
       dot.className = 'status-dot';
-      text.textContent = 'API CONNECTED';
+      text.textContent = 'FalkorDB Online';
+
+      if (modeBadge) {
+        if (data.agent_mode === 'llm') {
+          const prov = data.llm_provider === 'anthropic' ? 'Claude' : 'Gemini';
+          modeBadge.textContent = prov;
+        } else {
+          modeBadge.textContent = 'Rules Engine';
+        }
+      }
     } else {
-      throw new Error('API degraded');
+      throw new Error('Health check non-200');
     }
   } catch (err) {
     state.apiConnected = false;
-    dot.className = 'status-dot disconnected';
-    text.textContent = 'DISCONNECTED';
+    const dot = document.getElementById('status-dot');
+    const text = document.getElementById('status-text');
+    if (dot) dot.className = 'status-dot disconnected';
+    if (text) text.textContent = 'Disconnected';
   }
 }
 
@@ -152,54 +217,72 @@ async function refreshGraphData() {
     state.rawNodes = data.nodes || [];
     state.rawEdges = data.edges || [];
 
-    // Parse frozen accounts and enrich nodes
+    // Parse frozen accounts & style nodes for light theme
     state.frozenAccounts.clear();
     const styledNodes = state.rawNodes.map((n) => {
       const isSanction = n.group === 'SanctionedEntity';
       const isDevice = n.group === 'Device';
       const isIP = n.group === 'IPAddress';
-      const isFrozen = n.color && (n.color.background === '#ff3300' || n.label.includes('FROZEN'));
+      const isFrozen = (n.color && n.color.background === '#ff3300') || (n.label && n.label.includes('FROZEN'));
 
       if (isFrozen) {
         state.frozenAccounts.add(n.id);
       }
 
       let shape = 'dot';
-      let size = 20;
+      let size = 18;
       let label = n.label || n.id;
-      let color = n.color;
+      let color = {
+        background: '#0284C7', // Sky Blue for standard accounts
+        border: '#0369A1',
+        highlight: { background: '#0284C7', border: '#0C4A6E' },
+      };
 
       if (isSanction) {
         shape = 'hexagon';
-        size = 28;
+        size = 26;
         color = {
-          background: '#ff2d55',
-          border: '#ffffff',
-          highlight: { background: '#ff436b', border: '#ffffff' },
+          background: '#C8102E', // Cherry red
+          border: '#991B1B',
+          highlight: { background: '#A00C24', border: '#7F1D1D' },
         };
-      } else if (isDevice) {
-        shape = 'square';
-        size = 18;
-        color = { background: '#b026ff', border: '#d27aff' };
-      } else if (isIP) {
-        shape = 'diamond';
-        size = 18;
-        color = { background: '#8b5cf6', border: '#a78bfa' };
       } else if (isFrozen) {
         label = `🔒 ${n.id}\n[FROZEN]`;
         color = {
-          background: '#ef4444',
-          border: '#ffffff',
-          highlight: { background: '#dc2626', border: '#ffffff' },
+          background: '#C8102E',
+          border: '#991B1B',
+          highlight: { background: '#A00C24', border: '#7F1D1D' },
+        };
+      } else if (isDevice) {
+        shape = 'square';
+        size = 16;
+        color = {
+          background: '#475569', // Slate
+          border: '#334155',
+          highlight: { background: '#1E293B', border: '#0F172A' },
+        };
+      } else if (isIP) {
+        shape = 'diamond';
+        size = 16;
+        color = {
+          background: '#4F46E5', // Indigo
+          border: '#4338CA',
+          highlight: { background: '#3730A3', border: '#312E81' },
+        };
+      } else if (n.group === 'FlaggedAccount') {
+        color = {
+          background: '#D97706', // Amber
+          border: '#B45309',
+          highlight: { background: '#B45309', border: '#78350F' },
         };
       }
 
-      // Generate rich hover HTML tooltip
+      // Rich enterprise light tooltip
       const tooltip = `
-        <div style="background:#0b1120; border:1px solid rgba(255,255,255,0.15); padding:8px 12px; border-radius:6px; font-family:'JetBrains Mono', monospace; font-size:11px; color:#fff;">
-          <div style="font-weight:700; color:#00f0ff; margin-bottom:4px;">${n.id}</div>
-          <div>Type: <span style="color:#94a3b8;">${n.group || 'Account'}</span></div>
-          <div>Status: <span style="color:${isFrozen ? '#ff2d55' : '#00e676'}; font-weight:700;">${isFrozen ? 'FROZEN' : 'ACTIVE'}</span></div>
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1); padding:8px 12px; border-radius:6px; font-family:'JetBrains Mono', monospace; font-size:11px; color:#0B0F14;">
+          <div style="font-weight:700; color:#0284C7; margin-bottom:4px;">${escapeHtml(n.id)}</div>
+          <div style="color:#475569;">Type: <span style="color:#0B0F14; font-weight:600;">${escapeHtml(n.group || 'Account')}</span></div>
+          <div style="color:#475569;">Status: <span style="color:${isFrozen ? '#C8102E' : '#15803D'}; font-weight:700;">${isFrozen ? 'FROZEN' : 'ACTIVE'}</span></div>
         </div>
       `;
 
@@ -210,28 +293,42 @@ async function refreshGraphData() {
         label,
         color,
         title: tooltip,
-        borderWidth: isFrozen || isSanction ? 3 : 1.5,
+        borderWidth: isFrozen || isSanction ? 2.5 : 1.5,
       };
     });
 
     state.nodesDataSet.clear();
     state.nodesDataSet.add(styledNodes);
 
+    // Style edges: threat edges cherry red, normal edges light grey
+    const styledEdges = state.rawEdges.map((e) => {
+      const isThreat = e.color && (e.color.color === '#ff0055' || e.color === '#ff0055');
+      return {
+        ...e,
+        color: isThreat ? { color: '#C8102E' } : { color: '#CBD5E1' },
+        width: isThreat ? 2.2 : 1.2,
+      };
+    });
+
     state.edgesDataSet.clear();
-    state.edgesDataSet.add(state.rawEdges);
+    state.edgesDataSet.add(styledEdges);
 
     updateTelemetryHeader();
     updateMetricsTab();
     updateFreezeRegistry();
     updateSearchAutocomplete();
 
-    // Toggle empty state message if 0 nodes
+    // Toggle empty state placeholder in feed
     const emptyState = document.getElementById('empty-feed-placeholder');
-    if (emptyState && state.rawNodes.length > 0 && !state.activeDossier) {
+    if (emptyState && state.rawNodes.length > 0 && !state.activeDossier && !state.isStreaming) {
       emptyState.innerHTML = `
-        <div class="empty-state-icon">⚡</div>
-        <div style="font-weight:700; color:#fff; font-size:0.9rem;">Graph Loaded (${state.rawNodes.length} Nodes)</div>
-        <div class="empty-state-text">Ready for autonomous threat detection. Click <strong>Run Investigation</strong> to begin.</div>
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </div>
+        <div class="empty-state-title">Graph Loaded (${state.rawNodes.length} Nodes)</div>
+        <div class="empty-state-text">FalkorDB in-memory mesh active. Click <strong>Run Investigation</strong> to begin autonomous multi-hop threat analysis.</div>
       `;
     }
   } catch (err) {
@@ -239,181 +336,552 @@ async function refreshGraphData() {
   }
 }
 
-// ============================================================================
-// 3. AGENT INVESTIGATION ENGINE & TIMELINE
-// ============================================================================
-async function runInvestigation() {
-  if (state.isInvestigating) return;
-  state.isInvestigating = true;
+function updateTelemetryHeader() {
+  const nodeCountEl = document.getElementById('header-node-count');
+  const edgeCountEl = document.getElementById('header-edge-count');
+  if (nodeCountEl) nodeCountEl.textContent = state.rawNodes.length;
+  if (edgeCountEl) edgeCountEl.textContent = state.rawEdges.length;
 
-  const runBtn = document.getElementById('btn-run-investigation');
-  runBtn.disabled = true;
-  runBtn.innerHTML = `
-    <svg style="animation:spin 1s infinite linear; width:16px; height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
-      <path d="M12 2a10 10 0 0 1 10 10"></path>
-    </svg>
-    Investigating Graph...
-  `;
-
-  // Render animated step-by-step investigation timeline in Left Panel
-  const feed = document.getElementById('threats-feed');
-  feed.innerHTML = `
-    <div class="investigation-timeline" id="investigation-timeline">
-      <div class="timeline-title">
-        <span class="status-dot"></span> Autonomous Investigation Loop
-      </div>
-      <div class="timeline-step active" id="step-1">
-        <div class="step-icon">1</div>
-        <span>Scanning FalkorDB graph topology...</span>
-      </div>
-      <div class="timeline-step" id="step-2">
-        <div class="step-icon">2</div>
-        <span>Tracing multi-hop shortest paths to sanctions...</span>
-      </div>
-      <div class="timeline-step" id="step-3">
-        <div class="step-icon">3</div>
-        <span>Detecting circular structuring rings...</span>
-      </div>
-      <div class="timeline-step" id="step-4">
-        <div class="step-icon">4</div>
-        <span>Checking device & IP collision clusters...</span>
-      </div>
-      <div class="timeline-step" id="step-5">
-        <div class="step-icon">5</div>
-        <span>Executing atomic graph account freezes...</span>
-      </div>
-    </div>
-  `;
-
-  // Animate timeline steps
-  const steps = ['step-1', 'step-2', 'step-3', 'step-4', 'step-5'];
-  for (let i = 0; i < steps.length - 1; i++) {
-    await sleep(220);
-    const curr = document.getElementById(steps[i]);
-    const next = document.getElementById(steps[i + 1]);
-    if (curr) {
-      curr.className = 'timeline-step done';
-      curr.querySelector('.step-icon').textContent = '✓';
-    }
-    if (next) {
-      next.className = 'timeline-step active';
+  // Only display measured latencies
+  const enginePill = document.getElementById('pill-engine-latency');
+  const engineVal = document.getElementById('header-engine-latency');
+  if (enginePill && engineVal) {
+    if (state.lastEngineMs != null) {
+      engineVal.textContent = `${state.lastEngineMs}ms`;
+      enginePill.style.display = 'inline-flex';
+    } else {
+      enginePill.style.display = 'none';
     }
   }
 
-  try {
-    const t0 = performance.now();
-    const res = await fetch('/api/investigate', { method: 'POST' });
-    const dossier = await res.json();
-    const latency = Math.round(performance.now() - t0);
-
-    // Finalize last timeline step
-    const step5 = document.getElementById('step-5');
-    if (step5) {
-      step5.className = 'timeline-step done';
-      step5.querySelector('.step-icon').textContent = '✓';
+  const roundtripPill = document.getElementById('pill-roundtrip-latency');
+  const roundtripVal = document.getElementById('header-roundtrip-latency');
+  if (roundtripPill && roundtripVal) {
+    if (state.lastRoundtripMs != null) {
+      roundtripVal.textContent = `${state.lastRoundtripMs}ms`;
+      roundtripPill.style.display = 'inline-flex';
+    } else {
+      roundtripPill.style.display = 'none';
     }
+  }
+}
 
-    await sleep(250);
+function updateHeaderLatency(engineMs, roundtripMs) {
+  if (engineMs != null && !isNaN(engineMs)) {
+    state.lastEngineMs = parseFloat(engineMs);
+  }
+  if (roundtripMs != null && !isNaN(roundtripMs)) {
+    state.lastRoundtripMs = parseFloat(roundtripMs);
+  }
+  updateTelemetryHeader();
+}
+
+// ============================================================================
+// 3. INVESTIGATION: REAL-TIME SSE STREAM & FALLBACK RUNNER
+// ============================================================================
+function startLiveInvestigation() {
+  if (state.isStreaming) return;
+  state.isStreaming = true;
+
+  const liveBtn = document.getElementById('btn-live-stream');
+  const cancelBtn = document.getElementById('btn-cancel-stream');
+
+  if (liveBtn) {
+    liveBtn.disabled = true;
+    liveBtn.innerHTML = `
+      <svg style="animation:spin 1s infinite linear;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+        <path d="M12 2a10 10 0 0 1 10 10"></path>
+      </svg>
+      Investigating...
+    `;
+  }
+  if (cancelBtn) {
+    cancelBtn.style.display = 'inline-flex';
+  }
+
+  // Initialize live feed
+  const feed = document.getElementById('threats-feed');
+  feed.innerHTML = `
+    <div id="live-stream-header" class="live-stream-status">
+      <span style="display:flex; align-items:center; gap:6px;">
+        <span class="live-pulse-dot"></span>
+        <span id="live-stream-label">AUTONOMOUS INVESTIGATION IN PROGRESS</span>
+      </span>
+      <span id="live-step-counter" style="color:var(--sky-primary); font-weight:700;">STEP 0/12</span>
+    </div>
+    <div id="live-thinking-box" style="display:none;"></div>
+    <div id="live-tool-steps" style="display:flex; flex-direction:column; gap:6px;"></div>
+    <div id="live-findings-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+  `;
+
+  state.activeDossier = {
+    investigation_id: 'inv_live_' + Date.now(),
+    findings: [],
+    proposed_actions: [],
+    enforcement_actions: [],
+  };
+  state.liveFindings = [];
+  state.liveActions = [];
+  updateThreatCountBadge();
+
+  // Connect to SSE stream
+  try {
+    const evtSource = new EventSource('/api/investigate/stream?auto_freeze=false');
+    state.activeStream = evtSource;
+
+    evtSource.addEventListener('thinking', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const thinkingBox = document.getElementById('live-thinking-box');
+        if (thinkingBox) {
+          thinkingBox.style.display = 'block';
+          thinkingBox.className = 'thinking-card';
+          thinkingBox.innerHTML = `
+            <div class="thinking-header">Agent Reasoning (Step ${data.step || 1})</div>
+            <div class="thinking-text">${escapeHtml(data.text)}</div>
+          `;
+        }
+        const stepCounter = document.getElementById('live-step-counter');
+        if (stepCounter && data.step) {
+          stepCounter.textContent = `STEP ${data.step}/12`;
+        }
+      } catch (err) {
+        console.error('Error handling thinking event', err);
+      }
+    });
+
+    evtSource.addEventListener('tool_call', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const toolSteps = document.getElementById('live-tool-steps');
+        if (toolSteps) {
+          const cardId = `tool-call-${data.step}-${data.tool}`;
+          if (!document.getElementById(cardId)) {
+            const argsStr = Object.entries(data.args || {})
+              .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+              .join(', ');
+            const card = document.createElement('div');
+            card.id = cardId;
+            card.className = 'tool-step-card';
+            card.innerHTML = `
+              <div class="tool-step-top">
+                <span class="tool-name-badge">${escapeHtml(data.tool)}</span>
+                <span class="tool-timing-badge" id="timing-${data.step}-${data.tool}">Running...</span>
+              </div>
+              <div style="color:#64748B; font-size:10px;">Args: (${escapeHtml(argsStr)})</div>
+              <div class="tool-result-summary" id="result-${data.step}-${data.tool}">Executing openCypher query...</div>
+            `;
+            toolSteps.appendChild(card);
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+        const stepCounter = document.getElementById('live-step-counter');
+        if (stepCounter && data.step) {
+          stepCounter.textContent = `STEP ${data.step}/12`;
+        }
+      } catch (err) {
+        console.error('Error handling tool_call event', err);
+      }
+    });
+
+    evtSource.addEventListener('tool_result', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const resEl = document.getElementById(`result-${data.step}-${data.tool}`);
+        const timingEl = document.getElementById(`timing-${data.step}-${data.tool}`);
+
+        if (resEl) {
+          resEl.textContent = data.summary || 'Query finished';
+        }
+        if (timingEl) {
+          timingEl.textContent = `${data.engine_ms != null ? data.engine_ms + 'ms engine • ' : ''}${data.latency_ms || 0}ms`;
+        }
+        updateHeaderLatency(data.engine_ms, data.latency_ms);
+      } catch (err) {
+        console.error('Error handling tool_result event', err);
+      }
+    });
+
+    evtSource.addEventListener('finding', (e) => {
+      try {
+        const finding = JSON.parse(e.data);
+        addFindingDeduplicated(finding);
+      } catch (err) {
+        console.error('Error handling finding event', err);
+      }
+    });
+
+    evtSource.addEventListener('proposed_action', (e) => {
+      try {
+        const action = JSON.parse(e.data);
+        state.liveActions.push(action);
+        if (state.activeDossier) {
+          state.activeDossier.proposed_actions.push(action);
+        }
+        const findingsList = document.getElementById('live-findings-list');
+        if (findingsList) {
+          const actionHtml = renderProposedActionCard(action, state.liveActions.length - 1);
+          findingsList.insertAdjacentHTML('beforeend', actionHtml);
+        }
+      } catch (err) {
+        console.error('Error handling proposed_action event', err);
+      }
+    });
+
+    evtSource.addEventListener('done', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.dossier) {
+          state.activeDossier = data.dossier;
+        }
+        const streamLabel = document.getElementById('live-stream-label');
+        if (streamLabel) {
+          streamLabel.textContent = 'INVESTIGATION COMPLETED';
+          streamLabel.style.color = 'var(--green-success)';
+        }
+        refreshGraphData();
+        showToast('Investigation Complete', `Identified ${state.liveFindings.length} distinct threats.`, 'success');
+      } catch (err) {
+        console.error('Error handling done event', err);
+      } finally {
+        cleanupStream();
+      }
+    });
+
+    evtSource.onerror = () => {
+      // If SSE fails or disconnected, fallback to direct POST /api/investigate
+      cleanupStream();
+      if (state.liveFindings.length === 0) {
+        runDirectInvestigationFallback();
+      } else {
+        refreshGraphData();
+      }
+    };
+  } catch (err) {
+    cleanupStream();
+    runDirectInvestigationFallback();
+  }
+}
+
+async function runDirectInvestigationFallback() {
+  try {
+    showToast('Direct Investigation', 'Connecting to API investigator...', 'info');
+    const res = await fetch('/api/investigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_freeze: false }),
+    });
+    const dossier = await res.json();
     state.activeDossier = dossier;
+    state.liveFindings = [];
+    state.liveActions = dossier.proposed_actions || [];
 
-    renderThreatCards(dossier);
-    await refreshGraphData();
+    const findingsList = document.getElementById('live-findings-list');
+    if (findingsList) findingsList.innerHTML = '';
 
-    showToast('Investigation Complete', `Found ${dossier.findings.length} threat topologies in ${latency}ms`, 'success');
+    (dossier.findings || []).forEach((f) => addFindingDeduplicated(f));
+
+    const streamLabel = document.getElementById('live-stream-label');
+    if (streamLabel) {
+      streamLabel.textContent = 'INVESTIGATION COMPLETED';
+      streamLabel.style.color = 'var(--green-success)';
+    }
+    refreshGraphData();
+    showToast('Investigation Complete', `Dossier compiled with ${state.liveFindings.length} threats`, 'success');
   } catch (err) {
     showToast('Investigation Failed', err.message, 'error');
   } finally {
-    state.isInvestigating = false;
-    runBtn.disabled = false;
-    runBtn.innerHTML = `
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
-        <line x1="12" y1="9" x2="12" y2="13"></line>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+    cleanupStream();
+  }
+}
+
+function cleanupStream() {
+  if (state.activeStream) {
+    state.activeStream.close();
+    state.activeStream = null;
+  }
+  state.isStreaming = false;
+
+  const liveBtn = document.getElementById('btn-live-stream');
+  const cancelBtn = document.getElementById('btn-cancel-stream');
+
+  if (liveBtn) {
+    liveBtn.disabled = false;
+    liveBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
       </svg>
       Run Investigation
     `;
   }
+  if (cancelBtn) {
+    cancelBtn.style.display = 'none';
+  }
 }
 
-function renderThreatCards(dossier) {
-  const feed = document.getElementById('threats-feed');
-  const countBadge = document.getElementById('threat-count-badge');
-  countBadge.textContent = `${dossier.findings.length} THREATS`;
-
-  let html = `
-    <div style="font-size:0.72rem; font-family:'JetBrains Mono'; color:#00f0ff; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
-      <span>AGENT DOSSIER: ${dossier.investigation_id || 'COMPLETED'}</span>
-      <span style="color:#00e676;">${dossier.enforcement_actions.length} FROZEN</span>
-    </div>
-  `;
-
-  dossier.findings.forEach((finding, idx) => {
-    const isCritical = finding.severity === 'CRITICAL';
-    const cardClass = isCritical ? 'threat-card critical' : 'threat-card high';
-    const severityBadgeClass = isCritical ? 'severity-badge critical' : 'severity-badge high';
-
-    // Parse path nodes for interactive chips
-    let pathChips = [];
-    if (finding.path_trail) {
-      pathChips = finding.path_trail.split(' -> ').map((s) => s.trim());
-    } else if (finding.cycle_path) {
-      pathChips = finding.cycle_path.split(' -> ').map((s) => s.trim());
-    } else if (finding.accounts_sharing) {
-      pathChips = [...finding.accounts_sharing];
-      if (finding.device_fingerprint) pathChips.push(finding.device_fingerprint);
+function cancelInvestigation() {
+  if (state.isStreaming) {
+    cleanupStream();
+    showToast('Investigation Cancelled', 'Operation halted by user.', 'info');
+    const streamLabel = document.getElementById('live-stream-label');
+    if (streamLabel) {
+      streamLabel.textContent = 'INVESTIGATION CANCELLED';
+      streamLabel.style.color = 'var(--amber-warning)';
     }
-
-    const chipsHtml = pathChips
-      .map((chip, cIdx) => {
-        const isSanction = chip.includes('SANCTION');
-        const chipClass = isSanction ? 'path-chip sanction' : 'path-chip';
-        return `
-        <span class="${chipClass}" onclick="event.stopPropagation(); focusSingleNode('${chip}')">${chip}</span>
-        ${cIdx < pathChips.length - 1 ? '<span class="path-arrow">→</span>' : ''}
-      `;
-      })
-      .join('');
-
-    html += `
-      <div class="${cardClass}" id="card-threat-${idx}" onclick="focusThreatTrail(${idx})">
-        <div class="card-top">
-          <span class="${severityBadgeClass}">${finding.severity}</span>
-          <span class="card-latency">${finding.latency_ms ? finding.latency_ms + 'ms' : '< 1ms'}</span>
-        </div>
-        <div class="card-title">${formatThreatTitle(finding.type)}</div>
-        <div class="card-reasoning">${finding.reasoning}</div>
-        ${pathChips.length > 0 ? `<div class="path-trail-container">${chipsHtml}</div>` : ''}
-      </div>
-    `;
-  });
-
-  feed.innerHTML = html;
-}
-
-function formatThreatTitle(type) {
-  switch (type) {
-    case 'OFAC_SANCTIONS_EXPOSURE':
-      return 'OFAC Sanctions Exposure';
-    case 'CIRCULAR_STRUCTURING_RING':
-      return 'Circular Structuring Loop';
-    case 'SYBIL_DEVICE_FINGERPRINT_COLLISION':
-      return 'Sybil Hardware Farm Collision';
-    default:
-      return type.replace(/_/g, ' ');
   }
 }
 
 // ============================================================================
-// 4. GRAPH FOCUS, HIGHLIGHT & DIMMING ENGINE
+// 4. FINDINGS DEDUPLICATION & CARD RENDERING
+// ============================================================================
+function isDuplicateFinding(newF, existingF) {
+  if (newF.type !== existingF.type) return false;
+
+  if (newF.type === 'CIRCULAR_STRUCTURING_RING') {
+    const r1 = [...(newF.ring_members || [])].sort().join(',');
+    const r2 = [...(existingF.ring_members || [])].sort().join(',');
+    return r1 && r2 && r1 === r2;
+  }
+
+  if (newF.type === 'SYBIL_DEVICE_FINGERPRINT_COLLISION') {
+    if (newF.device_fingerprint && existingF.device_fingerprint) {
+      return newF.device_fingerprint === existingF.device_fingerprint;
+    }
+    const a1 = [...(newF.accounts_sharing || [])].sort().join(',');
+    const a2 = [...(existingF.accounts_sharing || [])].sort().join(',');
+    return a1 && a2 && a1 === a2;
+  }
+
+  if (newF.type === 'OFAC_SANCTIONS_EXPOSURE') {
+    return newF.source_account === existingF.source_account && newF.sanctioned_entity === existingF.sanctioned_entity;
+  }
+
+  return false;
+}
+
+function addFindingDeduplicated(finding) {
+  // Check if identical finding already recorded
+  const exists = state.liveFindings.some((existing) => isDuplicateFinding(finding, existing));
+  if (exists) return;
+
+  state.liveFindings.push(finding);
+  if (state.activeDossier && !state.activeDossier.findings.includes(finding)) {
+    state.activeDossier.findings.push(finding);
+  }
+
+  updateThreatCountBadge();
+
+  const findingsList = document.getElementById('live-findings-list');
+  if (findingsList) {
+    const idx = state.liveFindings.length - 1;
+    const cardHtml = renderSingleThreatCard(finding, idx);
+    findingsList.insertAdjacentHTML('beforeend', cardHtml);
+  }
+
+  // Isolate finding on canvas
+  focusFindingNodes(finding);
+  updateHeaderLatency(finding.engine_ms, finding.roundtrip_ms || finding.latency_ms);
+  showToast('Threat Identified', `${formatThreatTitle(finding.type, finding)} caught on graph`, 'error');
+}
+
+function updateThreatCountBadge() {
+  const badge = document.getElementById('threat-count-badge');
+  if (badge) {
+    const count = state.liveFindings.length;
+    badge.textContent = `${count} ${count === 1 ? 'Threat' : 'Threats'}`;
+    badge.classList.toggle('active', count > 0);
+  }
+}
+
+function formatThreatTitle(type, finding) {
+  switch (type) {
+    case 'OFAC_SANCTIONS_EXPOSURE': {
+      const hops = finding?.hop_count || (finding?.path_trail ? finding.path_trail.split(' -> ').length - 1 : 3);
+      return `OFAC Sanctions Exposure (${hops} Hops)`;
+    }
+    case 'CIRCULAR_STRUCTURING_RING': {
+      const nodeCount = finding?.ring_members?.length || (finding?.cycle_path ? finding.cycle_path.split(' -> ').length - 1 : 3);
+      return `Circular Structuring Loop (${nodeCount} Nodes)`;
+    }
+    case 'SYBIL_DEVICE_FINGERPRINT_COLLISION': {
+      const memberCount = finding?.member_count || finding?.accounts_sharing?.length || 2;
+      return `Sybil Hardware Cluster (${memberCount} Accounts)`;
+    }
+    default:
+      return (type || 'THREAT').replace(/_/g, ' ');
+  }
+}
+
+function renderSingleThreatCard(finding, idx) {
+  const isCritical = finding.severity === 'CRITICAL';
+  const cardClass = isCritical ? 'threat-card critical' : 'threat-card high';
+  const severityBadgeClass = isCritical ? 'severity-badge critical' : 'severity-badge high';
+
+  let pathChips = [];
+  if (finding.path_trail) {
+    pathChips = finding.path_trail.split(' -> ').map((s) => s.trim());
+  } else if (finding.cycle_path) {
+    pathChips = finding.cycle_path.split(' -> ').map((s) => s.trim());
+  } else if (finding.accounts_sharing) {
+    pathChips = [...finding.accounts_sharing];
+    if (finding.device_fingerprint) pathChips.push(finding.device_fingerprint);
+  } else if (finding.ring_members) {
+    pathChips = [...finding.ring_members];
+  }
+
+  const chipsHtml = pathChips
+    .map((chip, cIdx) => {
+      const isSanction = chip.includes('SANCTION');
+      const chipClass = isSanction ? 'path-chip sanction' : 'path-chip';
+      return `
+        <span class="${chipClass}" onclick="event.stopPropagation(); focusSingleNode('${escapeHtml(chip)}')">${escapeHtml(chip)}</span>
+        ${cIdx < pathChips.length - 1 ? '<span class="path-arrow">→</span>' : ''}
+      `;
+    })
+    .join('');
+
+  // Confidence badge
+  const confidenceBadge = finding.confidence
+    ? `<span style="font-size:10px; color:#64748B; font-family:'JetBrains Mono';">${Math.round(finding.confidence * 100)}% Conf.</span>`
+    : '';
+
+  // Only display latency if measured from API
+  let latencyHtml = '';
+  if (finding.engine_ms != null) {
+    latencyHtml = `<span class="card-latency">${finding.engine_ms}ms engine</span>`;
+  } else if (finding.latency_ms != null) {
+    latencyHtml = `<span class="card-latency">${finding.latency_ms}ms</span>`;
+  }
+
+  const evidenceDetails = `
+    <details class="threat-evidence-details" style="margin-top:6px; font-size:11px; color:#475569; cursor:pointer;" onclick="event.stopPropagation();">
+      <summary style="color:#0284C7; font-family:'JetBrains Mono'; font-weight:600; outline:none; user-select:none;">Evidence & Cypher Telemetry</summary>
+      <div style="margin-top:6px; padding:8px 10px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; font-family:'JetBrains Mono'; font-size:10px; line-height:1.45;">
+        ${finding.cypher_query ? `<div style="margin-bottom:4px;"><span style="color:#64748B;">QUERY:</span> <code style="color:#0369A1;">${escapeHtml(finding.cypher_query)}</code></div>` : ''}
+        ${finding.amounts && finding.amounts.length ? `<div style="margin-bottom:4px;"><span style="color:#64748B;">AMOUNTS:</span> <span style="color:#15803D;">$${finding.amounts.join(' → $')}</span></div>` : ''}
+        ${finding.cycle_path ? `<div style="margin-bottom:4px;"><span style="color:#64748B;">CYCLE:</span> ${escapeHtml(finding.cycle_path)}</div>` : ''}
+        ${finding.device_fingerprint ? `<div style="margin-bottom:4px;"><span style="color:#64748B;">DEVICE ID:</span> <span style="color:#4F46E5;">${escapeHtml(finding.device_fingerprint)}</span></div>` : ''}
+        ${finding.evidence ? `<div><span style="color:#64748B;">EVIDENCE:</span> ${escapeHtml(typeof finding.evidence === 'object' ? JSON.stringify(finding.evidence) : finding.evidence)}</div>` : ''}
+      </div>
+    </details>
+  `;
+
+  return `
+    <div class="${cardClass}" id="card-threat-${idx}" onclick="focusThreatTrail(${idx})">
+      <div class="card-top">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="${severityBadgeClass}">${escapeHtml(finding.severity)}</span>
+          ${confidenceBadge}
+        </div>
+        ${latencyHtml}
+      </div>
+      <div class="card-title">${formatThreatTitle(finding.type, finding)}</div>
+      <div class="card-reasoning">${escapeHtml(finding.reasoning)}</div>
+      ${pathChips.length > 0 ? `<div class="path-trail-container">${chipsHtml}</div>` : ''}
+      ${evidenceDetails}
+    </div>
+  `;
+}
+
+function renderProposedActionCard(action, idx) {
+  const accId = escapeHtml(action.account_id || '');
+  const reason = escapeHtml(action.reason || 'Containment proposed by threat policy');
+  const conf = action.confidence ? `${Math.round(action.confidence * 100)}% Conf.` : '';
+
+  return `
+    <div class="proposed-action-card" id="card-action-${idx}">
+      <div class="action-top">
+        <span class="action-badge">PROPOSED ACTION</span>
+        <span style="font-size:10px; color:#64748B; font-family:'JetBrains Mono';">${conf}</span>
+      </div>
+      <div class="action-account">Lockout ${accId}</div>
+      <div class="action-reason">${reason}</div>
+      <div class="action-btn-row">
+        <button class="btn-approve" onclick="approveAction('${accId}', '${reason}', this)">
+          Approve Freeze
+        </button>
+        <button class="btn-reject" onclick="rejectAction('${accId}', this)">
+          Reject
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function approveAction(accountId, reason, btnEl) {
+  try {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Freezing...';
+
+    const res = await fetch('/api/actions/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, reason: reason }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btnEl.className = 'btn-approve approved';
+      btnEl.innerHTML = '✓ Frozen & Enforced';
+
+      const parent = btnEl.closest('.action-btn-row');
+      if (parent) {
+        const rejBtn = parent.querySelector('.btn-reject');
+        if (rejBtn) rejBtn.style.display = 'none';
+      }
+
+      showToast('Enforcement Complete', `Account ${accountId} locked in FalkorDB`, 'success');
+      await refreshGraphData();
+    } else {
+      throw new Error(data.error || 'Approval failed');
+    }
+  } catch (err) {
+    btnEl.disabled = false;
+    btnEl.textContent = 'Retry Approve';
+    showToast('Enforcement Error', err.message, 'error');
+  }
+}
+
+async function rejectAction(accountId, btnEl) {
+  try {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Rejecting...';
+
+    const res = await fetch('/api/actions/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, reason: 'Operator rejected containment freeze' }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btnEl.textContent = '✕ Dismissed by Operator';
+      btnEl.style.color = 'var(--text-muted)';
+      btnEl.style.borderColor = 'var(--border-light)';
+
+      const parent = btnEl.closest('.action-btn-row');
+      if (parent) {
+        const appBtn = parent.querySelector('.btn-approve');
+        if (appBtn) appBtn.style.display = 'none';
+      }
+      showToast('Action Dismissed', `Proposed freeze on ${accountId} rejected`, 'info');
+    } else {
+      throw new Error(data.error || 'Failed to reject action');
+    }
+  } catch (err) {
+    btnEl.disabled = false;
+    btnEl.textContent = 'Reject';
+    showToast('Reject Error', err.message, 'error');
+  }
+}
+
+// ============================================================================
+// 5. GRAPH FOCUS, HIGHLIGHT & DIMMING ENGINE
 // ============================================================================
 function focusThreatTrail(threatIdx) {
-  if (!state.activeDossier || !state.activeDossier.findings[threatIdx]) return;
-  const finding = state.activeDossier.findings[threatIdx];
+  const finding = state.liveFindings[threatIdx] || (state.activeDossier && state.activeDossier.findings[threatIdx]);
+  if (!finding) return;
   state.focusedThreatId = threatIdx;
 
-  // Highlight card in left feed
   document.querySelectorAll('.threat-card').forEach((c, idx) => {
     if (idx === threatIdx) {
       c.classList.add('focused');
@@ -423,7 +891,10 @@ function focusThreatTrail(threatIdx) {
     }
   });
 
-  // Extract all involved node IDs
+  focusFindingNodes(finding);
+}
+
+function focusFindingNodes(finding) {
   let targetNodeIds = [];
   if (finding.path_trail) {
     targetNodeIds = finding.path_trail.split(' -> ').map((s) => s.trim());
@@ -432,139 +903,146 @@ function focusThreatTrail(threatIdx) {
   } else if (finding.accounts_sharing) {
     targetNodeIds = [...finding.accounts_sharing];
     if (finding.device_fingerprint) targetNodeIds.push(finding.device_fingerprint);
+  } else if (finding.ring_members) {
+    targetNodeIds = [...finding.ring_members];
+  } else if (finding.path_nodes) {
+    targetNodeIds = finding.path_nodes.map((n) => (typeof n === 'object' ? n.id : n));
   }
 
   if (targetNodeIds.length === 0) return;
+  highlightNodeSet(targetNodeIds, formatThreatTitle(finding.type, finding));
+}
 
+function highlightNodeSet(targetNodeIds, title) {
   const targetSet = new Set(targetNodeIds);
 
-  // Dim non-target nodes and highlight target nodes
   const updateNodes = [];
   state.nodesDataSet.forEach((node) => {
     const isTarget = targetSet.has(node.id);
     updateNodes.push({
       id: node.id,
-      opacity: isTarget ? 1.0 : 0.12,
-      font: { color: isTarget ? '#ffffff' : 'rgba(255,255,255,0.2)' },
+      opacity: isTarget ? 1.0 : 0.15,
+      font: {
+        color: isTarget ? '#0B0F14' : 'rgba(11, 15, 20, 0.25)',
+      },
       shadow: isTarget
-        ? { enabled: true, color: '#00f0ff', size: 20, x: 0, y: 0 }
+        ? { enabled: true, color: 'rgba(2, 132, 199, 0.35)', size: 14, x: 0, y: 3 }
         : { enabled: false },
     });
   });
   state.nodesDataSet.update(updateNodes);
 
-  // Dim edges
+  // Dim edges not in threat path
   const updateEdges = [];
   state.edgesDataSet.forEach((edge) => {
-    const isTargetEdge = targetSet.has(edge.from) && targetSet.has(edge.to);
+    const isBetween = targetSet.has(edge.from) && targetSet.has(edge.to);
     updateEdges.push({
       id: edge.id,
-      color: isTargetEdge
-        ? { color: '#ff2d55', opacity: 1.0 }
-        : { color: 'rgba(255,255,255,0.05)', opacity: 0.05 },
-      width: isTargetEdge ? 3.5 : 1,
+      color: isBetween ? { color: '#C8102E' } : { color: '#E2E8F0' },
+      width: isBetween ? 2.5 : 1,
     });
   });
   state.edgesDataSet.update(updateEdges);
 
-  // Smooth camera zoom & fit
-  state.network.fit({
-    nodes: targetNodeIds,
-    animation: {
-      duration: 700,
-      easingFunction: 'easeInOutQuad',
-    },
-  });
-
-  // Show Reset Focus banner
+  // Show focus banner
   const banner = document.getElementById('focus-banner');
   const bannerText = document.getElementById('focus-banner-text');
-  bannerText.textContent = `Isolated Threat: ${formatThreatTitle(finding.type)} (${targetNodeIds.length} nodes)`;
-  banner.style.display = 'flex';
-}
+  if (banner && bannerText) {
+    bannerText.textContent = `Isolated: ${title} (${targetNodeIds.length} Nodes)`;
+    banner.style.display = 'flex';
+  }
 
-function resetGraphFocus() {
-  state.focusedThreatId = null;
-
-  // Restore all nodes
-  const restoreNodes = [];
-  state.nodesDataSet.forEach((node) => {
-    restoreNodes.push({
-      id: node.id,
-      opacity: 1.0,
-      font: { color: '#ffffff' },
-      shadow: { enabled: true, color: 'rgba(0,0,0,0.6)', size: 10, x: 0, y: 4 },
-    });
-  });
-  state.nodesDataSet.update(restoreNodes);
-
-  // Restore edges
-  const restoreEdges = [];
-  state.edgesDataSet.forEach((edge) => {
-    restoreEdges.push({
-      id: edge.id,
-      color: { color: edge.color.color || 'rgba(255,255,255,0.25)', opacity: 1.0 },
-      width: 1.5,
-    });
-  });
-  state.edgesDataSet.update(restoreEdges);
-
-  // Reset card focus
-  document.querySelectorAll('.threat-card').forEach((c) => c.classList.remove('focused'));
-
-  // Hide banner
-  document.getElementById('focus-banner').style.display = 'none';
-
-  // Fit all nodes
+  // Smooth camera zoom
   state.network.fit({
-    animation: { duration: 600, easingFunction: 'easeInOutQuad' },
+    nodes: targetNodeIds,
+    animation: { duration: 500, easingFunction: 'easeInOutQuad' },
   });
 }
 
 function focusSingleNode(nodeId) {
-  if (!nodeId || !state.network) return;
+  if (!state.network) return;
   state.network.focus(nodeId, {
-    scale: 1.4,
-    animation: { duration: 600, easingFunction: 'easeInOutQuad' },
+    scale: 1.3,
+    animation: { duration: 500, easingFunction: 'easeInOutQuad' },
   });
   inspectNode(nodeId);
 }
 
+function resetGraphFocus() {
+  state.focusedThreatId = null;
+  document.querySelectorAll('.threat-card').forEach((c) => c.classList.remove('focused'));
+
+  const resetNodes = [];
+  state.nodesDataSet.forEach((node) => {
+    resetNodes.push({
+      id: node.id,
+      opacity: 1.0,
+      font: { color: '#0B0F14' },
+      shadow: { enabled: true, color: 'rgba(11, 15, 20, 0.08)', size: 8, x: 0, y: 2 },
+    });
+  });
+  state.nodesDataSet.update(resetNodes);
+
+  const resetEdges = [];
+  state.edgesDataSet.forEach((edge) => {
+    resetEdges.push({
+      id: edge.id,
+      color: null,
+      width: 1.2,
+    });
+  });
+  state.edgesDataSet.update(resetEdges);
+
+  const banner = document.getElementById('focus-banner');
+  if (banner) banner.style.display = 'none';
+
+  state.network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+}
+
 // ============================================================================
-// 5. NODE INSPECTOR DRAWER
+// 6. NODE INSPECTION DRAWER
 // ============================================================================
 function inspectNode(nodeId) {
-  const node = state.nodesDataSet.get(nodeId);
+  const node = state.rawNodes.find((n) => n.id === nodeId);
   if (!node) return;
 
   const drawer = document.getElementById('node-drawer');
-  document.getElementById('drawer-node-id').textContent = node.id;
-  document.getElementById('drawer-node-type').textContent = node.group || 'Account';
-
-  const isFrozen = state.frozenAccounts.has(node.id);
+  const typeEl = document.getElementById('drawer-node-type');
+  const idEl = document.getElementById('drawer-node-id');
   const statusEl = document.getElementById('drawer-node-status');
-  statusEl.textContent = isFrozen ? 'FROZEN' : 'ACTIVE';
-  statusEl.style.color = isFrozen ? 'var(--red)' : 'var(--green)';
-
   const riskEl = document.getElementById('drawer-node-risk');
-  riskEl.textContent = isFrozen ? '100 / 100 (CRITICAL)' : '15 / 100 (LOW)';
-  riskEl.style.color = isFrozen ? 'var(--red)' : 'var(--cyan)';
+  const actionsEl = document.getElementById('drawer-actions');
 
-  const actionsContainer = document.getElementById('drawer-actions');
-  if (isFrozen) {
-    actionsContainer.innerHTML = `
-      <button class="btn btn-unfreeze" style="width:100%; justify-content:center; padding:9px 14px;" onclick="unfreezeAccount('${node.id}')">
-        ✓ Unfreeze Account & Restore Status
-      </button>
-    `;
-  } else {
-    actionsContainer.innerHTML = `
-      <button class="btn btn-secondary" style="width:100%; justify-content:center; font-size:0.75rem;" onclick="focusSingleNode('${node.id}')">
-        Center Camera on Entity
-      </button>
-    `;
+  const isFrozen = state.frozenAccounts.has(nodeId);
+  const isSanction = node.group === 'SanctionedEntity';
+
+  typeEl.textContent = node.group || 'Account Entity';
+  idEl.textContent = nodeId;
+
+  statusEl.textContent = isFrozen ? 'FROZEN (LOCKED)' : isSanction ? 'SANCTIONED (OFAC TARGET)' : 'ACTIVE';
+  statusEl.style.color = isFrozen || isSanction ? 'var(--cherry-danger)' : 'var(--green-success)';
+
+  const riskScore = node.risk_score != null ? node.risk_score : isSanction ? 100 : isFrozen ? 95 : 15;
+  riskEl.textContent = `${riskScore} / 100`;
+
+  let actionHtml = '';
+  if (node.group === 'Account' || !node.group) {
+    if (isFrozen) {
+      actionHtml = `
+        <button class="btn btn-secondary" style="width:100%; border-color:var(--green-border); color:var(--green-success);" onclick="unfreezeAccount('${escapeHtml(nodeId)}')">
+          ✓ Unfreeze Account
+        </button>
+      `;
+    } else {
+      actionHtml = `
+        <button class="btn btn-danger" style="width:100%;" onclick="freezeAccountDirect('${escapeHtml(nodeId)}')">
+          Lockout Account
+        </button>
+      `;
+    }
   }
 
+  actionsEl.innerHTML = actionHtml;
   drawer.classList.add('open');
 }
 
@@ -573,217 +1051,257 @@ function closeNodeDrawer() {
   if (drawer) drawer.classList.remove('open');
 }
 
-async function unfreezeAccount(accId) {
+async function freezeAccountDirect(accountId) {
+  try {
+    const res = await fetch('/api/freeze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, reason: 'Operator manual lockout' }),
+    });
+    const data = await res.json();
+    if (data.success || data.ok) {
+      showToast('Account Frozen', `Account ${accountId} locked in FalkorDB`, 'error');
+      await refreshGraphData();
+      inspectNode(accountId);
+    } else {
+      throw new Error(data.error || 'Failed to freeze account');
+    }
+  } catch (err) {
+    showToast('Freeze Failed', err.message, 'error');
+  }
+}
+
+async function unfreezeAccount(accountId) {
   try {
     const res = await fetch('/api/account/unfreeze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: accId }),
+      body: JSON.stringify({ account_id: accountId, actor: 'human_operator' }),
     });
     const data = await res.json();
     if (data.ok) {
-      showToast('Account Unfrozen', `Restored ${accId} to ACTIVE state in FalkorDB`, 'success');
-      state.frozenAccounts.delete(accId);
+      showToast('Account Restored', `Account ${accountId} is now active`, 'success');
       await refreshGraphData();
-      inspectNode(accId);
+      inspectNode(accountId);
     } else {
-      showToast('Unfreeze Failed', data.error || 'Server error', 'error');
+      throw new Error(data.error || 'Failed to unfreeze account');
     }
   } catch (err) {
-    showToast('Unfreeze Error', err.message, 'error');
+    showToast('Unfreeze Failed', err.message, 'error');
   }
 }
 
 // ============================================================================
-// 6. RIGHT PANEL TABS (METRICS, FREEZE REGISTRY, CYPHER STUDIO)
+// 7. TABS, METRICS & COUNT-UP ANIMATION
 // ============================================================================
-function switchTab(tabId) {
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabId);
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === tabName);
   });
-  document.querySelectorAll('.tab-pane').forEach((pane) => {
-    pane.classList.toggle('active', pane.id === `tab-pane-${tabId}`);
+  document.querySelectorAll('.tab-pane').forEach((p) => {
+    p.classList.toggle('active', p.id === `tab-pane-${tabName}`);
   });
+  if (tabName === 'history') {
+    loadInvestigationsHistory();
+  }
 }
 
-function updateTelemetryHeader() {
-  const nodesCount = state.rawNodes.length;
-  const edgesCount = state.rawEdges.length;
-  document.getElementById('header-node-count').textContent = nodesCount;
-  document.getElementById('header-edge-count').textContent = edgesCount;
+function animateCountUp(el, start, end, duration = 350) {
+  if (!el) return;
+  if (typeof start !== 'number' || isNaN(start)) start = 0;
+  if (typeof end !== 'number' || isNaN(end)) end = 0;
+  if (start === end || duration <= 0) {
+    el.textContent = end;
+    return;
+  }
+  const startTime = performance.now();
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const easeOutQuad = 1 - (1 - progress) * (1 - progress);
+    const current = Math.round(start + (end - start) * easeOutQuad);
+    el.textContent = Math.max(0, current);
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      el.textContent = end;
+    }
+  }
+  requestAnimationFrame(update);
 }
 
 function updateMetricsTab() {
-  const nodeCount = state.rawNodes.length;
-  const edgeCount = state.rawEdges.length;
-  const threatsCount = state.activeDossier ? state.activeDossier.findings.length : 3;
-  const frozenCount = state.frozenAccounts.size;
+  const statNodes = document.getElementById('stat-nodes');
+  const statEdges = document.getElementById('stat-edges');
+  const statThreats = document.getElementById('stat-threats');
+  const statFrozen = document.getElementById('stat-frozen');
 
-  animateNumber('stat-nodes', nodeCount);
-  animateNumber('stat-edges', edgeCount);
-  animateNumber('stat-threats', threatsCount);
-  animateNumber('stat-frozen', frozenCount);
-}
+  const targetNodes = state.rawNodes.length;
+  const targetEdges = state.rawEdges.length;
+  const targetThreats = state.liveFindings.length || (state.activeDossier ? state.activeDossier.findings.length : 0);
+  const targetFrozen = state.frozenAccounts.size;
 
-function animateNumber(elementId, target) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  const current = parseInt(el.textContent, 10) || 0;
-  if (current === target) return;
+  animateCountUp(statNodes, state.displayedCounts.nodes, targetNodes);
+  animateCountUp(statEdges, state.displayedCounts.edges, targetEdges);
+  animateCountUp(statThreats, state.displayedCounts.threats, targetThreats);
+  animateCountUp(statFrozen, state.displayedCounts.frozen, targetFrozen);
 
-  const duration = 600;
-  const stepTime = 30;
-  const steps = duration / stepTime;
-  const increment = (target - current) / steps;
-  let val = current;
-
-  const timer = setInterval(() => {
-    val += increment;
-    if ((increment > 0 && val >= target) || (increment < 0 && val <= target)) {
-      el.textContent = target;
-      clearInterval(timer);
-    } else {
-      el.textContent = Math.round(val);
-    }
-  }, stepTime);
+  state.displayedCounts = {
+    nodes: targetNodes,
+    edges: targetEdges,
+    threats: targetThreats,
+    frozen: targetFrozen,
+  };
 }
 
 function updateFreezeRegistry() {
-  const container = document.getElementById('freeze-registry-list');
-  const countBadge = document.getElementById('freeze-registry-count');
-  countBadge.textContent = `${state.frozenAccounts.size} FROZEN`;
+  const listEl = document.getElementById('freeze-registry-list');
+  const countEl = document.getElementById('freeze-registry-count');
+  if (!listEl) return;
 
-  if (state.frozenAccounts.size === 0) {
-    container.innerHTML = `
+  const frozenArray = Array.from(state.frozenAccounts);
+  if (countEl) countEl.textContent = `${frozenArray.length} ${frozenArray.length === 1 ? 'Frozen' : 'Frozen'}`;
+
+  if (frozenArray.length === 0) {
+    listEl.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">🛡️</div>
-        <div style="font-weight:700; color:#fff;">No Frozen Accounts</div>
-        <div class="empty-state-text">No active graph lockouts. Accounts are frozen automatically during autonomous investigations.</div>
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <div class="empty-state-title">No Frozen Accounts</div>
+        <div class="empty-state-text">No accounts currently locked. Run the autonomous investigation to detect and contain compromised mules.</div>
       </div>
     `;
     return;
   }
 
   let html = '';
-  state.frozenAccounts.forEach((accId) => {
+  frozenArray.forEach((accId) => {
     html += `
-      <div class="freeze-card" onclick="focusSingleNode('${accId}')">
-        <div class="freeze-card-top">
-          <div class="freeze-id">
-            <span style="color:#ef4444;">🔒</span> ${accId}
-          </div>
-          <span class="freeze-badge">MUTATION AUDITED</span>
+      <div class="freeze-item">
+        <div>
+          <div class="freeze-item-id">🔒 ${escapeHtml(accId)}</div>
+          <div class="freeze-item-reason">Containment lockout active</div>
         </div>
-        <div class="freeze-desc">
-          High-risk financial anomaly detected. Account status set to FROZEN and linked to EnforcementAction in FalkorDB.
-        </div>
-        <div style="margin-top:4px;">
-          <button class="btn-unfreeze" onclick="event.stopPropagation(); unfreezeAccount('${accId}')">
-            ✓ Unfreeze Account
-          </button>
-        </div>
+        <button class="btn-unfreeze" onclick="unfreezeAccount('${escapeHtml(accId)}')">Unfreeze</button>
       </div>
     `;
   });
 
-  container.innerHTML = html;
+  listEl.innerHTML = html;
+}
+
+// Audit Chain Verification
+async function verifyAuditChain() {
+  const resultEl = document.getElementById('audit-verification-result');
+  const btn = document.getElementById('btn-verify-audit');
+  if (resultEl) resultEl.textContent = 'Verifying SHA-256 blockchain...';
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/audit/verify');
+    const data = await res.json();
+    if (data.valid) {
+      if (resultEl) {
+        resultEl.style.color = 'var(--green-success)';
+        resultEl.textContent = `✓ Passed: ${data.verified_count} blocks verified without tampering.`;
+      }
+      showToast('Audit Verified', `${data.verified_count} blocks cryptographically verified`, 'success');
+    } else {
+      if (resultEl) {
+        resultEl.style.color = 'var(--cherry-danger)';
+        resultEl.textContent = `✕ Tamper detected: ${data.message}`;
+      }
+      showToast('Audit Tamper', data.message, 'error');
+    }
+  } catch (err) {
+    if (resultEl) {
+      resultEl.style.color = 'var(--cherry-danger)';
+      resultEl.textContent = `Error: ${err.message}`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ============================================================================
-// 7. CYPHER STUDIO
+// 8. OPENCYPHER STUDIO
 // ============================================================================
 const CYPHER_PRESETS = {
-  shortest_path: `MATCH (src:Account {id: 'ACC_MULE_ALPHA'}),
-      (target:SanctionedEntity),
-      p = (src)-[:TRANSFERRED*1..5]->(target)
-RETURN p, length(p) AS hops, target.name AS target_name
-LIMIT 5;`,
+  shortest_path: `MATCH (a:Account {id: 'ACC_MULE_ALPHA'}), (target:SanctionedEntity)
+RETURN shortestPath((a)-[:TRANSFERRED*1..5]->(target)) AS path, a.id AS origin_account, target.name AS target_name;`,
 
-  cycle_detection: `MATCH (a:Account)-[:TRANSFERRED]->(b:Account)-[:TRANSFERRED]->(c:Account)-[:TRANSFERRED]->(a:Account)
-RETURN a.id AS acc_a, b.id AS acc_b, c.id AS acc_c
-LIMIT 5;`,
+  cycle_detection: `MATCH (a:Account)-[r1:TRANSFERRED]->(b:Account)-[r2:TRANSFERRED]->(c:Account)-[r3:TRANSFERRED]->(a:Account)
+WHERE a.id < b.id AND a.id < c.id AND b.id <> c.id
+RETURN a.id, b.id, c.id, r1.amount, r2.amount, r3.amount;`,
 
-  sybil_collisions: `MATCH (a1:Account)-[:USED_DEVICE]->(d:Device)<-[:USED_DEVICE]-(a2:Account)
-WHERE a1.id < a2.id
-RETURN a1.id AS acc_1, a2.id AS acc_2, d.fingerprint AS shared_hwid
-LIMIT 5;`,
+  sybil_collisions: `MATCH (a:Account)-[:OPERATED_FROM]->(d:Device)
+WITH d.fingerprint AS device, count(a) AS account_count, collect(a.id) AS accounts
+WHERE account_count >= 2
+RETURN device, account_count, accounts;`,
 
-  frozen_registry: `MATCH (a:Account {status: 'FROZEN'})
-RETURN a.id AS account, a.holder AS holder, a.status AS status, a.risk_score AS risk
-ORDER BY a.risk_score DESC;`,
+  frozen_registry: `MATCH (a:Account {status: 'frozen'})
+RETURN a.id AS account_id, a.risk_score AS risk, a.frozen_at AS locked_at;`,
 };
 
 function loadCypherPreset(presetKey) {
-  const query = CYPHER_PRESETS[presetKey];
-  if (!query) return;
-  document.getElementById('cypher-editor').value = query.trim();
-  executeCypherQuery();
+  const editor = document.getElementById('cypher-editor');
+  if (editor && CYPHER_PRESETS[presetKey]) {
+    editor.value = CYPHER_PRESETS[presetKey];
+    executeCypherQuery();
+  }
 }
 
 async function executeCypherQuery() {
-  const query = document.getElementById('cypher-editor').value.trim();
-  if (!query) {
-    showToast('Empty Query', 'Enter openCypher query or click a preset pill', 'info');
-    return;
-  }
-
-  const runBtn = document.getElementById('btn-run-cypher');
-  const tableContainer = document.getElementById('cypher-results-table');
+  const editor = document.getElementById('cypher-editor');
   const telemetryEl = document.getElementById('cypher-telemetry');
+  const tableContainer = document.getElementById('cypher-results-table');
+  const runBtn = document.getElementById('btn-run-cypher');
+
+  const query = editor.value.trim();
+  if (!query) return;
 
   runBtn.disabled = true;
-  telemetryEl.textContent = 'Executing on FalkorDB...';
-  tableContainer.innerHTML = `
-    <div style="padding:20px; text-align:center; color:#00f0ff; font-family:'JetBrains Mono'; font-size:11px;">
-      Running openCypher linear algebra query...
-    </div>
-  `;
+  telemetryEl.textContent = 'Executing query...';
+  telemetryEl.style.color = 'var(--sky-primary)';
 
   try {
-    const t0 = performance.now();
     const res = await fetch('/api/graph/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),
     });
     const data = await res.json();
-    const clientLatency = Math.round(performance.now() - t0);
 
     if (!data.ok) {
-      telemetryEl.textContent = 'Error';
-      telemetryEl.style.color = 'var(--red)';
-      tableContainer.innerHTML = `
-        <div style="padding:15px; color:#ff2d55; font-family:'JetBrains Mono'; font-size:11px;">
-          ✕ Cypher Error: ${data.error}
-        </div>
-      `;
+      telemetryEl.textContent = 'Query Error';
+      telemetryEl.style.color = 'var(--cherry-danger)';
+      tableContainer.innerHTML = `<div style="padding:15px; color:var(--cherry-danger);">${escapeHtml(data.error)}</div>`;
       return;
     }
 
-    const execTime = data.execution_time_ms ? `${data.execution_time_ms}ms` : `${clientLatency}ms`;
-    telemetryEl.textContent = `✓ ${data.row_count} rows in ${execTime}`;
-    telemetryEl.style.color = 'var(--green)';
+    telemetryEl.textContent = `${data.row_count} rows • ${data.execution_time_ms}ms execution`;
+    telemetryEl.style.color = 'var(--green-success)';
 
-    if (!data.rows || data.rows.length === 0) {
-      tableContainer.innerHTML = `
-        <div style="padding:20px; text-align:center; color:#64748b; font-family:'JetBrains Mono'; font-size:11px;">
-          (0 rows returned in ${execTime})
-        </div>
-      `;
+    if (data.rows.length === 0) {
+      tableContainer.innerHTML = `<div style="padding:20px; color:#64748B; text-align:center;">Query succeeded: 0 rows returned.</div>`;
       return;
     }
 
     let tableHtml = `<table class="data-table"><thead><tr>`;
     data.columns.forEach((col) => {
-      tableHtml += `<th>${col}</th>`;
+      tableHtml += `<th>${escapeHtml(col)}</th>`;
     });
     tableHtml += `</tr></thead><tbody>`;
 
     data.rows.forEach((row) => {
       tableHtml += `<tr>`;
       row.forEach((cell) => {
-        const display = typeof cell === 'object' ? JSON.stringify(cell) : cell;
-        tableHtml += `<td title="${display}">${display}</td>`;
+        const display = typeof cell === 'object' ? JSON.stringify(cell) : String(cell);
+        tableHtml += `<td title="${escapeHtml(display)}">${escapeHtml(display)}</td>`;
       });
       tableHtml += `</tr>`;
     });
@@ -792,15 +1310,15 @@ async function executeCypherQuery() {
     tableContainer.innerHTML = tableHtml;
   } catch (err) {
     telemetryEl.textContent = 'Network Error';
-    telemetryEl.style.color = 'var(--red)';
-    tableContainer.innerHTML = `<div style="padding:15px; color:#ff2d55;">${err.message}</div>`;
+    telemetryEl.style.color = 'var(--cherry-danger)';
+    tableContainer.innerHTML = `<div style="padding:15px; color:var(--cherry-danger);">${escapeHtml(err.message)}</div>`;
   } finally {
     runBtn.disabled = false;
   }
 }
 
 // ============================================================================
-// 8. SEED DATA WORKFLOW
+// 9. SEED DATA WORKFLOW
 // ============================================================================
 async function seedGraphData() {
   const btn = document.getElementById('btn-seed-data');
@@ -808,21 +1326,30 @@ async function seedGraphData() {
   btn.textContent = 'Seeding Graph...';
 
   try {
-    const res = await fetch('/api/seed', { method: 'POST' });
+    const res = await fetch('/api/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
     await res.json();
 
     state.activeDossier = null;
+    state.liveFindings = [];
+    state.liveActions = [];
     state.focusedThreatId = null;
     resetGraphFocus();
     await refreshGraphData();
 
-    // Reset left panel
-    document.getElementById('threat-count-badge').textContent = '0 THREATS';
+    updateThreatCountBadge();
     document.getElementById('threats-feed').innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon" style="color:#00e676; border-color:rgba(0,230,118,0.3);">✓</div>
-        <div style="font-weight:700; color:#fff;">Financial Network Seeded</div>
-        <div class="empty-state-text">FalkorDB initialized with synthetic banking mesh, sanctions list, and fraud clusters. Ready to investigate!</div>
+        <div class="empty-state-icon" style="color:var(--green-success); background:var(--green-light); border-color:var(--green-border);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <div class="empty-state-title">Financial Graph Initialized</div>
+        <div class="empty-state-text">FalkorDB initialized with synthetic banking mesh, OFAC sanctions list, and fraud clusters. Ready to investigate!</div>
       </div>
     `;
 
@@ -832,7 +1359,7 @@ async function seedGraphData() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
         <path d="M3 3v5h5"></path>
         <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
@@ -844,80 +1371,12 @@ async function seedGraphData() {
 }
 
 // ============================================================================
-// 9. AUTOMATED DEMO MODE (2-MINUTE WALKTHROUGH)
-// ============================================================================
-async function startDemoMode() {
-  if (state.isDemoRunning) return;
-  state.isDemoRunning = true;
-
-  const banner = document.getElementById('demo-banner');
-  const bannerText = document.getElementById('demo-narration-text');
-  banner.style.display = 'flex';
-
-  const setNarration = (text) => {
-    bannerText.innerHTML = text;
-  };
-
-  try {
-    // Step 1: Seed Graph
-    setNarration('<strong>Step 1/5:</strong> Seeding financial banking graph in FalkorDB Cloud...');
-    await seedGraphData();
-    await sleep(2000);
-
-    // Step 2: Overview of topology
-    setNarration('<strong>Step 2/5:</strong> FalkorDB graph ready. Sub-millisecond openCypher engine active.');
-    state.network.fit({ animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
-    await sleep(2200);
-
-    // Step 3: Run autonomous AI agent
-    setNarration('<strong>Step 3/5:</strong> Launching Autonomous Threat Investigator Agent...');
-    await runInvestigation();
-    await sleep(2400);
-
-    // Step 4: Highlight Threat 1 (Sanctions Smurfing)
-    if (state.activeDossier && state.activeDossier.findings.length > 0) {
-      setNarration('<strong>Step 4/5:</strong> Detected 4-Hop OFAC Sanctions Smurfing Path. Freezing mules!');
-      focusThreatTrail(0);
-      switchTab('registry');
-      await sleep(3500);
-
-      // Highlight Threat 2 (Circular Ring)
-      if (state.activeDossier.findings.length > 1) {
-        setNarration('<strong>Structuring Detection:</strong> Identified circular money cycling ring (A → B → C → A).');
-        focusThreatTrail(1);
-        await sleep(3500);
-      }
-
-      // Highlight Threat 3 (Sybil Collisions)
-      if (state.activeDossier.findings.length > 2) {
-        setNarration('<strong>Sybil Hardware Farm:</strong> Multiple accounts sharing identical device fingerprint.');
-        focusThreatTrail(2);
-        await sleep(3500);
-      }
-    }
-
-    // Step 5: Switch to Cypher Studio
-    setNarration('<strong>Step 5/5:</strong> openCypher Studio — Live sub-millisecond graph query telemetry.');
-    switchTab('cypher');
-    loadCypherPreset('shortest_path');
-    await sleep(3000);
-
-    setNarration('✓ <strong>Demo Complete:</strong> All threats detected and neutralized on FalkorDB.');
-    await sleep(3000);
-  } catch (err) {
-    showToast('Demo Interrupted', err.message, 'error');
-  } finally {
-    state.isDemoRunning = false;
-    banner.style.display = 'none';
-  }
-}
-
-// ============================================================================
 // 10. SEARCH & AUTOCOMPLETE
 // ============================================================================
 function updateSearchAutocomplete() {
   const input = document.getElementById('node-search-input');
   const dropdown = document.getElementById('search-dropdown');
+  if (!input || !dropdown) return;
 
   input.oninput = (e) => {
     const q = e.target.value.trim().toLowerCase();
@@ -931,7 +1390,7 @@ function updateSearchAutocomplete() {
     );
 
     if (matches.length === 0) {
-      dropdown.innerHTML = `<div style="padding:10px; color:#64748b; font-size:11px;">No entities found</div>`;
+      dropdown.innerHTML = `<div style="padding:10px; color:#64748B; font-size:11px;">No entities found</div>`;
       dropdown.style.display = 'block';
       return;
     }
@@ -940,9 +1399,9 @@ function updateSearchAutocomplete() {
       .slice(0, 7)
       .map(
         (m) => `
-        <div class="search-item" onclick="focusSingleNode('${m.id}'); document.getElementById('search-dropdown').style.display='none';">
-          <span>${m.id}</span>
-          <span style="color:#00f0ff; font-size:10px;">${m.group || 'Node'}</span>
+        <div class="search-item" onclick="focusSingleNode('${escapeHtml(m.id)}'); document.getElementById('search-dropdown').style.display='none';">
+          <span>${escapeHtml(m.id)}</span>
+          <span style="color:#0284C7; font-size:10px; font-weight:600;">${escapeHtml(m.group || 'Node')}</span>
         </div>
       `
       )
@@ -958,17 +1417,242 @@ function updateSearchAutocomplete() {
 }
 
 // ============================================================================
-// 11. EVENT LISTENERS & HELPERS
+// 11. GRAPHRAG (NATURAL LANGUAGE QUERY OVER FALKORDB)
+// ============================================================================
+function setRagQuestion(q) {
+  const input = document.getElementById('rag-question-input');
+  if (input) {
+    input.value = q;
+    submitRagQuestion();
+  }
+}
+
+async function submitRagQuestion() {
+  const input = document.getElementById('rag-question-input');
+  const btn = document.getElementById('btn-submit-rag');
+  const container = document.getElementById('rag-response-container');
+  const summaryEl = document.getElementById('rag-summary-text');
+  const timingEl = document.getElementById('rag-timing-badge');
+  const cypherEl = document.getElementById('rag-cypher-code');
+  const tableEl = document.getElementById('rag-results-table');
+
+  const question = input ? input.value.trim() : '';
+  if (!question) return;
+
+  if (btn) btn.disabled = true;
+  if (container) container.style.display = 'flex';
+  if (summaryEl) summaryEl.textContent = 'Synthesizing verified openCypher query...';
+  if (cypherEl) cypherEl.textContent = '-- Introspecting FalkorDB schema...';
+  if (tableEl) tableEl.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/graph/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      if (summaryEl) summaryEl.textContent = `Error: ${data.error || 'Query failed'}`;
+      if (timingEl) timingEl.textContent = 'Failed';
+      return;
+    }
+
+    if (summaryEl) summaryEl.textContent = data.summary || 'Query executed successfully.';
+    if (timingEl) timingEl.textContent = `${data.execution_time_ms || 0}ms engine`;
+    if (cypherEl) cypherEl.textContent = data.cypher || '--';
+
+    // Highlight returned nodes on canvas
+    if (data.highlight_nodes && data.highlight_nodes.length > 0) {
+      highlightNodeSet(data.highlight_nodes, `Ask Graph: "${question}"`);
+    }
+
+    // Render results table
+    if (data.rows && data.rows.length > 0) {
+      let ths = (data.columns || []).map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+      let trs = data.rows
+        .map((row) => {
+          let tds = row
+            .map((v) => {
+              const valStr = typeof v === 'object' ? JSON.stringify(v) : String(v);
+              return `<td title="${escapeHtml(valStr)}">${escapeHtml(valStr)}</td>`;
+            })
+            .join('');
+          return `<tr>${tds}</tr>`;
+        })
+        .join('');
+      tableEl.innerHTML = `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    } else {
+      tableEl.innerHTML = `<div style="padding:10px; color:#64748B; font-size:11px;">0 rows returned</div>`;
+    }
+  } catch (err) {
+    if (summaryEl) summaryEl.textContent = `Network error: ${err.message}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ============================================================================
+// 12. GRAPH MEMORY (INVESTIGATION HISTORY)
+// ============================================================================
+async function loadInvestigationsHistory() {
+  const container = document.getElementById('investigations-history-list');
+  if (!container) return;
+  container.innerHTML = `<div style="padding:15px; text-align:center; color:#64748B; font-size:11px;">Loading past investigations from FalkorDB...</div>`;
+
+  try {
+    const res = await fetch('/api/investigations/history');
+    const data = await res.json();
+    const historyList = data.investigations || data.history || [];
+
+    if (!data.ok || historyList.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="empty-state-title">No Past Investigations</div>
+          <div class="empty-state-text">Run an investigation to store (:Investigation) memory nodes in FalkorDB.</div>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    historyList.forEach((inv) => {
+      const invId = inv.id || inv.investigation_id || 'INV-RECORD';
+      const dateStr = inv.timestamp ? new Date(inv.timestamp).toLocaleTimeString() : 'Recent';
+      html += `
+        <div class="threat-card" style="cursor:default; border-left:3px solid var(--sky-primary);">
+          <div class="card-top">
+            <span style="font-family:'JetBrains Mono'; font-size:11px; color:#0284C7; font-weight:700;">${escapeHtml(invId)}</span>
+            <span class="card-latency">${inv.threat_count || 0} threats</span>
+          </div>
+          <div style="font-size:11px; color:#0B0F14; margin-top:3px;">Agent: ${escapeHtml(inv.agent_id || 'OmniTrace-v1')} • Mode: ${escapeHtml(inv.mode || 'rules')}</div>
+          <div style="font-size:10px; color:#64748B; margin-top:2px;">Audited: ${escapeHtml(inv.summary || 'Investigation')} • At: ${dateStr}</div>
+          <div style="margin-top:6px; display:flex; gap:6px;">
+            <button class="btn-xs" onclick="exportInvestigationReport('${escapeHtml(invId)}', 'html')">Report</button>
+            <button class="btn-xs" onclick="exportInvestigationReport('${escapeHtml(invId)}', 'json')">JSON</button>
+          </div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div style="padding:10px; color:var(--cherry-danger); font-size:11px;">Error loading history: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function exportInvestigationReport(invId, format) {
+  const url = `/api/dossiers/${encodeURIComponent(invId)}/export?format=${format}`;
+  if (format === 'html') {
+    window.open(url, '_blank');
+  } else {
+    window.location.href = url;
+  }
+}
+
+// ============================================================================
+// 13. PRESENTATION MODE (2-MINUTE GUIDED FLOW)
+// ============================================================================
+let presentationRunning = false;
+
+function showNarration(text) {
+  const banner = document.getElementById('demo-banner');
+  const textEl = document.getElementById('demo-narration-text');
+  if (banner && textEl) {
+    textEl.textContent = text;
+    banner.style.display = 'flex';
+  }
+}
+
+function hideNarration() {
+  const banner = document.getElementById('demo-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function startPresentationMode() {
+  if (presentationRunning) return;
+  presentationRunning = true;
+  const btn = document.getElementById('btn-presentation-mode');
+  if (btn) btn.disabled = true;
+
+  try {
+    showToast('Presentation Flow Started', 'Running autonomous live demo across real API endpoints', 'info');
+
+    // Step 1: Seed data
+    showNarration('Step 1/5: Seeding synthetic banking mesh into FalkorDB in-memory graph...');
+    await seedGraphData();
+    await sleep(2500);
+
+    // Step 2: Live AI Investigation
+    showNarration('Step 2/5: Streaming AI investigator traverses multi-hop graph to find threats...');
+    startLiveInvestigation();
+
+    // Wait until streaming finishes or findings appear
+    let waitCount = 0;
+    while (state.isStreaming && waitCount < 30) {
+      await sleep(1000);
+      waitCount++;
+    }
+    await sleep(2000);
+
+    // Step 3: Isolate Threat 0 (OFAC Sanctions)
+    if (state.liveFindings.length > 0) {
+      showNarration('Step 3/5: Isolating OFAC sanctions exposure trail on graph canvas...');
+      focusThreatTrail(0);
+      await sleep(4000);
+    }
+
+    // Step 4: Approve first proposed action if any
+    const firstApproveBtn = document.querySelector('.btn-approve');
+    if (firstApproveBtn) {
+      showNarration('Step 4/5: Enforcing zero-trust containment (severing outbound routes in FalkorDB)...');
+      firstApproveBtn.click();
+      await sleep(3000);
+    }
+
+    // Step 5: Switch to Ask Graph and submit RAG query
+    showNarration('Step 5/5: GraphRAG natural language query over FalkorDB schema...');
+    switchTab('ask');
+    setRagQuestion('How did money reach Hydra Exchange?');
+    await sleep(5000);
+
+    showNarration('✓ Presentation Complete! Autonomous agent detected, isolated, and neutralized threats.');
+    showToast('Demo Complete', 'All 5 phases demonstrated live on FalkorDB', 'success');
+    await sleep(4000);
+    hideNarration();
+  } catch (err) {
+    showToast('Demo Error', err.message, 'error');
+    hideNarration();
+  } finally {
+    presentationRunning = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ============================================================================
+// 14. EVENT LISTENERS & HELPERS
 // ============================================================================
 function setupEventListeners() {
-  // Top Buttons
+  // Navigation Actions
   document.getElementById('btn-seed-data').addEventListener('click', seedGraphData);
-  document.getElementById('btn-run-investigation').addEventListener('click', runInvestigation);
-  document.getElementById('btn-demo-mode').addEventListener('click', startDemoMode);
+  document.getElementById('btn-live-stream').addEventListener('click', startLiveInvestigation);
+  document.getElementById('btn-cancel-stream').addEventListener('click', cancelInvestigation);
+
+  const presBtn = document.getElementById('btn-presentation-mode');
+  if (presBtn) presBtn.addEventListener('click', startPresentationMode);
 
   // Graph HUD Controls
   document.getElementById('btn-fit-screen').addEventListener('click', () => {
-    state.network.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+    state.network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
   });
 
   document.getElementById('btn-toggle-physics').addEventListener('click', (e) => {
@@ -991,7 +1675,9 @@ function setupEventListeners() {
 
   // Cypher Presets
   document.querySelectorAll('.preset-pill').forEach((pill) => {
-    pill.addEventListener('click', () => loadCypherPreset(pill.dataset.preset));
+    if (pill.dataset.preset) {
+      pill.addEventListener('click', () => loadCypherPreset(pill.dataset.preset));
+    }
   });
 
   // Cypher Run Button & Shortcut
@@ -1002,8 +1688,46 @@ function setupEventListeners() {
       executeCypherQuery();
     }
   });
+
+  // GraphRAG (Ask Graph)
+  const ragSubmitBtn = document.getElementById('btn-submit-rag');
+  if (ragSubmitBtn) ragSubmitBtn.addEventListener('click', submitRagQuestion);
+  const ragInput = document.getElementById('rag-question-input');
+  if (ragInput) {
+    ragInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitRagQuestion();
+      }
+    });
+  }
+
+  // Memory History Refresh
+  const histRefreshBtn = document.getElementById('btn-refresh-history');
+  if (histRefreshBtn) histRefreshBtn.addEventListener('click', loadInvestigationsHistory);
+
+  // Audit Blockchain Verification
+  const auditVerifyBtn = document.getElementById('btn-verify-audit');
+  if (auditVerifyBtn) auditVerifyBtn.addEventListener('click', verifyAuditChain);
+
+  // Compliance Dossier Exports
+  const expHtmlBtn = document.getElementById('btn-export-html');
+  if (expHtmlBtn) {
+    expHtmlBtn.addEventListener('click', () => {
+      const invId = state.activeDossier ? state.activeDossier.investigation_id : 'latest';
+      exportInvestigationReport(invId, 'html');
+    });
+  }
+  const expJsonBtn = document.getElementById('btn-export-json');
+  if (expJsonBtn) {
+    expJsonBtn.addEventListener('click', () => {
+      const invId = state.activeDossier ? state.activeDossier.investigation_id : 'latest';
+      exportInvestigationReport(invId, 'json');
+    });
+  }
 }
 
+// Enterprise Light Toast System (Replaces browser popups)
 function showToast(title, message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
@@ -1011,12 +1735,18 @@ function showToast(title, message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
 
-  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+  const iconSvg =
+    type === 'success'
+      ? `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+      : type === 'error'
+      ? `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#C8102E" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
+      : `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#0284C7" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+
   toast.innerHTML = `
-    <span style="font-weight:700; color:${type === 'success' ? 'var(--green)' : type === 'error' ? 'var(--red)' : 'var(--cyan)'};">${icon}</span>
+    ${iconSvg}
     <div>
-      <div style="font-weight:700; font-size:12px;">${title}</div>
-      <div style="font-size:11px; color:#94a3b8;">${message}</div>
+      <div class="toast-title">${escapeHtml(title)}</div>
+      <div class="toast-message">${escapeHtml(message)}</div>
     </div>
   `;
 
@@ -1024,11 +1754,17 @@ function showToast(title, message, type = 'info') {
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(20px)';
-    toast.style.transition = 'all 0.3s ease';
-    setTimeout(() => toast.remove(), 300);
+    toast.style.transition = 'all 0.25s ease';
+    setTimeout(() => toast.remove(), 250);
   }, 4000);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
