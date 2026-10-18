@@ -91,6 +91,14 @@
         Run Investigation
       </button>
 
+      <button class="btn btn-secondary" id="btn-guided-demo" aria-label="Run guided end-to-end demo" title="Run real end-to-end guided walkthrough">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="10 8 16 12 10 16 10 8"></polygon>
+        </svg>
+        Guided Demo
+      </button>
+
       <button class="btn btn-cancel" id="btn-cancel-stream" title="Cancel running investigation" aria-label="Cancel investigation">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
@@ -101,6 +109,33 @@
       </button>
     </div>
   </header>
+
+  <!-- PUBLIC DEMO BANNER -->
+  <div id="public-demo-banner" class="public-demo-banner" style="display:none;" role="alert">
+    <span>🛡️ <strong>Public demo:</strong> Synthetic data only. Data may be reset at any time.</span>
+    <span class="public-demo-hint">FalkorDB Graph Hacks Track 01 Showcase</span>
+  </div>
+
+  <!-- COLD START WARMUP BANNER -->
+  <div id="cold-start-banner" class="cold-start-banner" style="display:none;" role="status">
+    <svg style="animation:spin 1s infinite linear; width:14px; height:14px; flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+      <path d="M12 2a10 10 0 0 1 10 10"></path>
+    </svg>
+    <span>Waking up the server, this can take up to a minute on free cloud hosting...</span>
+  </div>
+
+  <!-- GUIDED DEMO CAPTION BAR -->
+  <div id="guided-demo-banner" class="guided-demo-banner" style="display:none;" role="region" aria-label="Guided Demo Progress">
+    <div class="guided-demo-info">
+      <span class="guided-demo-badge">Guided demo: real actions on synthetic data</span>
+      <span id="guided-demo-caption" class="guided-demo-caption">Step 1 of 4: Initializing...</span>
+    </div>
+    <div class="guided-demo-controls">
+      <button id="btn-demo-pause-resume" class="btn-xs-demo" title="Pause / Resume Demo">Pause</button>
+      <button id="btn-demo-stop" class="btn-xs-demo btn-demo-stop" title="Stop Guided Demo">Stop</button>
+    </div>
+  </div>
 
   <!-- MAIN COCKPIT CONTAINER: 3 COLUMNS -->
   <div class="cockpit-container">

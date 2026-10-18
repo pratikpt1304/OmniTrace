@@ -23,10 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_ROOT / "static"
 
 app = Flask(__name__, static_folder=str(STATIC_DIR))
-allowed_origins = os.getenv("ALLOWED_ORIGINS")
-if allowed_origins:
-    CORS(app, origins=[o.strip() for o in allowed_origins.split(",") if o.strip()])
+
+# Safe Defaults & Public Demo Mode Configuration
+PUBLIC_DEMO = os.getenv("PUBLIC_DEMO", "false").lower() in ("true", "1", "yes")
+
+# CORS Configuration with Security Warning
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+api_key_configured = bool(os.getenv("OMNITRACE_API_KEY"))
+
+if allowed_origins_env:
+    origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    if "*" in origins and not api_key_configured:
+        logging.warning("SECURITY WARNING: ALLOWED_ORIGINS='*' while OMNITRACE_API_KEY is not configured! Public mutating requests are unprotected.")
+    CORS(app, origins=origins)
 else:
+    # Default to same-origin / local development only
     CORS(app, origins=["http://127.0.0.1:8765", "http://localhost:8765"])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -40,6 +51,26 @@ from agent.graph_rag import GraphRAG
 graph = get_fraud_graph()
 investigator = OmniTraceInvestigator(graph=graph)
 graph_rag = GraphRAG(graph=graph)
+
+# In-memory per-IP Rate Limiting for Public Deployments
+IP_REQUEST_HISTORY: dict[str, list[float]] = {}
+
+def check_ip_rate_limit(action_type: str, max_calls: int, window_seconds: int = 3600) -> str | None:
+    """Enforce rolling window rate limits per client IP in public demo mode."""
+    if not PUBLIC_DEMO:
+        return None
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "127.0.0.1").split(",")[0].strip()
+    key = f"{ip}:{action_type}"
+    now = time.time()
+    history = IP_REQUEST_HISTORY.get(key, [])
+    # Prune timestamps older than window
+    history = [t for t in history if now - t < window_seconds]
+    if len(history) >= max_calls:
+        wait_min = int(max(1, (window_seconds - (now - history[0])) / 60))
+        return f"Rate limit reached for {action_type} ({max_calls}/hour). Please retry in {wait_min} minutes."
+    history.append(now)
+    IP_REQUEST_HISTORY[key] = history
+    return None
 
 
 @app.route("/")
@@ -65,6 +96,7 @@ def api_health():
 
         mode = os.getenv("AGENT_MODE", "rules")
         provider = os.getenv("LLM_PROVIDER", "gemini")
+        auto_freeze = False if PUBLIC_DEMO else (os.getenv("AUTO_FREEZE", "false").lower() == "true")
 
         return jsonify({
             "status": "healthy" if is_connected else "degraded",
@@ -74,7 +106,8 @@ def api_health():
             "total_nodes": node_count,
             "agent_mode": mode,
             "llm_provider": provider,
-            "auto_freeze": os.getenv("AUTO_FREEZE", "false").lower() == "true",
+            "auto_freeze": auto_freeze,
+            "public_demo": PUBLIC_DEMO,
         })
     except Exception as e:
         return jsonify({
@@ -341,6 +374,11 @@ def api_seed():
     if auth_err:
         return auth_err
 
+    # Rate limit seeding in public demo (max 4 per hour per IP)
+    rate_err = check_ip_rate_limit("seed", max_calls=4, window_seconds=3600)
+    if rate_err:
+        return jsonify({"ok": False, "error": rate_err}), 429
+
     data = request.get_json(force=True, silent=True) or {}
     if not data.get("confirm"):
         return jsonify({
@@ -359,9 +397,14 @@ def api_investigate():
     if auth_err:
         return auth_err
 
+    # Rate limit investigations in public demo (max 10 per hour per IP)
+    rate_err = check_ip_rate_limit("investigate", max_calls=10, window_seconds=3600)
+    if rate_err:
+        return jsonify({"ok": False, "error": rate_err}), 429
+
     data = request.get_json(force=True, silent=True) or {}
     goal = data.get("goal")
-    auto_freeze = data.get("auto_freeze")
+    auto_freeze = False if PUBLIC_DEMO else data.get("auto_freeze")
 
     dossier = investigator.run_full_investigation(goal=goal, auto_freeze=auto_freeze)
 
@@ -387,13 +430,20 @@ def api_investigate_stream():
     if auth_err:
         return auth_err
 
+    # Rate limit investigations in public demo (max 10 per hour per IP)
+    rate_err = check_ip_rate_limit("investigate", max_calls=10, window_seconds=3600)
+    if rate_err:
+        def error_stream():
+            yield f"event: error\ndata: {json.dumps({'error': rate_err})}\n\n"
+        return Response(error_stream(), mimetype="text/event-stream", status=429)
+
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
         goal = data.get("goal")
-        auto_freeze = data.get("auto_freeze")
+        auto_freeze = False if PUBLIC_DEMO else data.get("auto_freeze")
     else:
         goal = request.args.get("goal")
-        auto_freeze = request.args.get("auto_freeze", "").lower() == "true" if "auto_freeze" in request.args else None
+        auto_freeze = False if PUBLIC_DEMO else (request.args.get("auto_freeze", "").lower() == "true" if "auto_freeze" in request.args else None)
 
     def event_stream():
         for event in investigator.stream_investigation(goal=goal, auto_freeze=auto_freeze):
@@ -599,8 +649,11 @@ def api_graph_query():
 
 
 def run():
-    port = int(os.getenv("PORT", 8765))
-    host = os.getenv("HOST", "127.0.0.1")
+    port_env = os.getenv("PORT")
+    port = int(port_env or 8765)
+    # Default to 0.0.0.0 when PORT is provided by hosting platform (e.g. Render), else 127.0.0.1 for local dev safety
+    default_host = "0.0.0.0" if port_env else "127.0.0.1"
+    host = os.getenv("HOST", default_host)
     print("=" * 68)
     print("  OMNITRACE :: AUTONOMOUS GRAPH FRAUD INVESTIGATOR (TRACK 01)")
     print(f"  Cockpit UI: http://{host}:{port}")

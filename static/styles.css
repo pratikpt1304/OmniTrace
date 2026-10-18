@@ -1503,6 +1503,128 @@ header {
   .nav-status {
     display: none;
   }
+/* ==========================================================================
+   Public Demo and Cold Start Banners
+   ========================================================================== */
+.public-demo-banner {
+  background: #EFF6FF;
+  border-bottom: 1px solid #BFDBFE;
+  color: #1E40AF;
+  padding: 6px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  z-index: 45;
+}
+
+.public-demo-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #3B82F6;
+  background: #DBEAFE;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.cold-start-banner {
+  background: #FEF3C7;
+  border-bottom: 1px solid #FDE68A;
+  color: #92400E;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 46;
+}
+
+/* ==========================================================================
+   Guided Demo Caption Bar System
+   ========================================================================== */
+.guided-demo-banner {
+  background: #0F172A;
+  color: #FFFFFF;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--sky-primary);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.guided-demo-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.guided-demo-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--sky-primary);
+  color: #FFFFFF;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.guided-demo-caption {
+  font-size: 13px;
+  font-weight: 500;
+  color: #F8FAFC;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.guided-demo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.btn-xs-demo {
+  background: #1E293B;
+  color: #F1F5F9;
+  border: 1px solid #334155;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-xs-demo:hover {
+  background: #334155;
+  color: #FFFFFF;
+}
+
+.btn-demo-stop {
+  background: var(--cherry-danger);
+  border-color: #EF4444;
+  color: #FFFFFF;
+}
+
+.btn-demo-stop:hover {
+  background: #DC2626;
 }
 
 @media (max-width: 860px) {
@@ -1516,3 +1638,4 @@ header {
     height: 500px;
   }
 }
+

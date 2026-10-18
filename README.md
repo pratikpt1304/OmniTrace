@@ -343,11 +343,18 @@ pip install -r requirements.txt
 
 **Option A: Local Docker (Recommended)**
 ```bash
-docker run -p 6379:6379 -p 3000:3000 -it --rm -v ./data:/var/lib/falkordb/data falkordb/falkordb:latest
+docker run -p 6379:6379 -p 3000:3000 -it --rm -v ./data:/var/lib/falkordb/data falkordb/falkordb
 ```
 
 **Option B: FalkorDB Cloud**
-Sign up at [FalkorDB Cloud](https://app.falkordb.cloud/), create an instance, and note the host, port, and password.
+1. Sign up at [FalkorDB Cloud](https://app.falkordb.cloud/).
+2. Create a deployment instance (Free tier).
+3. Copy the host, port, and password from the instance connect dialog.
+
+> [!NOTE]
+> **Understanding Latency Metrics (Engine vs. Round-Trip)**:
+> - **Engine Time**: The exact microsecond/millisecond execution time spent purely inside the FalkorDB GraphBLAS matrix engine processing the openCypher traversal (measured by the database, typically `0.25ms` to `0.45ms` on synthetic data).
+> - **Total Round-Trip Time**: The full client-to-database network request/response latency. When running against local Docker, round-trip is `<10ms`. When connecting over public internet to a cloud database, round-trip accounts for WAN network transit (`20ms` to `60ms`). The OmniTrace UI displays both metrics with clear distinction.
 
 ### Environment Configuration
 
@@ -374,6 +381,17 @@ cp .env.example .env
 | `GEMINI_API_KEY` | Google Gemini API key | *Optional* |
 | `AUTO_FREEZE` | Automatically execute freezes without human-in-the-loop review | `false` |
 | `OMNITRACE_API_KEY` | Secret token required in `X-API-Key` header for mutations | *Optional* |
+| `PUBLIC_DEMO` | Safe public showcase mode: forces rate limits, disables auto-freeze | `false` |
+
+### Live Cloud Showcase
+
+A hosted live demonstration is accessible at:
+👉 **[https://<your-render-url>](https://<your-render-url>)**
+
+> [!IMPORTANT]
+> **Free Instance Cold Starts & Reset Policy**:
+> - **Cold Starts**: Render free tier instances spin down after inactivity. The first request may take up to 60 seconds to warm up. OmniTrace features an automatic warmup notification while waiting for the health check.
+> - **Public Demo Safety**: The public deployment runs with `PUBLIC_DEMO=true` on synthetic data. Data may be reset or re-seeded at any time. Seeding and investigation endpoints enforce per-IP rate limits to prevent resource exhaustion.
 
 ### Running the Application
 

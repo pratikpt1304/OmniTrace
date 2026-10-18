@@ -177,17 +177,33 @@ function initVisNetwork() {
 // 2. DATA SYNCHRONIZATION & HEALTH TELEMETRY
 // ============================================================================
 async function checkApiHealth() {
+  const coldStartBanner = document.getElementById('cold-start-banner');
+  // If health check takes > 1.5s, show cold start warmup notice
+  const coldStartTimer = setTimeout(() => {
+    if (!state.apiConnected && coldStartBanner) {
+      coldStartBanner.style.display = 'flex';
+    }
+  }, 1500);
+
   try {
     const res = await fetch('/api/health');
+    clearTimeout(coldStartTimer);
+    if (coldStartBanner) coldStartBanner.style.display = 'none';
+
     const dot = document.getElementById('status-dot');
     const text = document.getElementById('status-text');
     const modeBadge = document.getElementById('ai-mode-badge');
+    const demoBanner = document.getElementById('public-demo-banner');
 
     if (res.ok) {
       const data = await res.json();
       state.apiConnected = true;
-      dot.className = 'status-dot';
-      text.textContent = 'FalkorDB Online';
+      if (dot) dot.className = 'status-dot';
+      if (text) text.textContent = 'FalkorDB Online';
+
+      if (demoBanner) {
+        demoBanner.style.display = data.public_demo ? 'flex' : 'none';
+      }
 
       if (modeBadge) {
         if (data.agent_mode === 'llm') {
@@ -201,6 +217,7 @@ async function checkApiHealth() {
       throw new Error('Health check non-200');
     }
   } catch (err) {
+    clearTimeout(coldStartTimer);
     state.apiConnected = false;
     const dot = document.getElementById('status-dot');
     const text = document.getElementById('status-text');
@@ -549,17 +566,20 @@ function startLiveInvestigation() {
       }
     });
 
-    evtSource.onerror = () => {
-      // If SSE fails or disconnected, fallback to direct POST /api/investigate
+    evtSource.onerror = (e) => {
+      // If SSE fails or disconnected, notify user and fallback to direct POST /api/investigate
       cleanupStream();
       if (state.liveFindings.length === 0) {
+        showToast('Stream Interrupted', 'Live stream disconnected; falling back to direct investigation...', 'info');
         runDirectInvestigationFallback();
       } else {
+        showToast('Stream Completed', 'Investigation stream closed. You can review findings or click Run Investigation to retry.', 'info');
         refreshGraphData();
       }
     };
   } catch (err) {
     cleanupStream();
+    showToast('Stream Error', `${err.message}. Retrying via direct API fallback...`, 'error');
     runDirectInvestigationFallback();
   }
 }
@@ -1556,8 +1576,185 @@ function exportInvestigationReport(invId, format) {
 }
 
 // ============================================================================
-// 13. PRESENTATION MODE (2-MINUTE GUIDED FLOW)
+// 13. GUIDED DEMO ENGINE (100% REAL ACTIONS ON SYNTHETIC DATA)
 // ============================================================================
+const demoState = {
+  active: false,
+  paused: false,
+  stepIndex: 0,
+  stepTimeout: null,
+};
+
+async function startGuidedDemo() {
+  if (demoState.active) return;
+
+  // Confirmation dialog before seeding wipes graph
+  const proceed = window.confirm('This resets the demo data. Continue?');
+  if (!proceed) return;
+
+  demoState.active = true;
+  demoState.paused = false;
+  demoState.stepIndex = 1;
+
+  const banner = document.getElementById('guided-demo-banner');
+  const captionEl = document.getElementById('guided-demo-caption');
+  const pauseResumeBtn = document.getElementById('btn-demo-pause-resume');
+  const demoBtn = document.getElementById('btn-guided-demo');
+
+  if (banner) banner.style.display = 'flex';
+  if (pauseResumeBtn) pauseResumeBtn.textContent = 'Pause';
+  if (demoBtn) demoBtn.disabled = true;
+
+  try {
+    // STEP 1: REAL SEED
+    setDemoCaption('Step 1 of 4: Resetting and seeding synthetic fraud topology in FalkorDB...');
+    await waitWhilePaused(800);
+    if (!demoState.active) return;
+
+    const seedRes = await fetch('/api/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    if (!seedRes.ok) {
+      const errData = await seedRes.json().catch(() => ({}));
+      throw new Error(errData.error || `Seeding failed with HTTP ${seedRes.status}`);
+    }
+    await refreshGraphData();
+    showToast('Demo Step 1', `Seeded synthetic graph (${state.rawNodes.length} nodes, ${state.rawEdges.length} edges)`, 'success');
+
+    // STEP 2: REAL INVESTIGATION STREAM
+    await waitWhilePaused(1800);
+    if (!demoState.active) return;
+    demoState.stepIndex = 2;
+    setDemoCaption('Step 2 of 4: The agent searches the graph for sanctions exposure, circular rings, and Sybil farms...');
+
+    // Run real live investigation and wait until findings are loaded
+    await executeDemoInvestigation();
+    if (!demoState.active) return;
+
+    // STEP 3: HIGHLIGHT FIRST FINDING ON GRAPH
+    await waitWhilePaused(1500);
+    if (!demoState.active) return;
+    demoState.stepIndex = 3;
+
+    if (state.liveFindings && state.liveFindings.length > 0) {
+      const firstFinding = state.liveFindings[0];
+      const title = formatThreatTitle(firstFinding.type, firstFinding);
+      setDemoCaption(`Step 3 of 4: Visualizing threat path on graph: ${title}...`);
+      focusThreatTrail(0);
+      showToast('Demo Step 3', `Highlighted ${title}`, 'info');
+    } else {
+      setDemoCaption('Step 3 of 4: No threats returned by investigator.');
+    }
+
+    // STEP 4: SHOW APPROVE / FREEZE ACTION FLOW
+    await waitWhilePaused(2000);
+    if (!demoState.active) return;
+    demoState.stepIndex = 4;
+    setDemoCaption('Step 4 of 4: Compliance cockpit proposes containment action for operator review...');
+
+    const firstApproveBtn = document.querySelector('.btn-approve');
+    if (firstApproveBtn) {
+      firstApproveBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstApproveBtn.style.outline = '2px solid var(--sky-primary)';
+      firstApproveBtn.style.outlineOffset = '2px';
+      setTimeout(() => {
+        if (firstApproveBtn) firstApproveBtn.style.outline = 'none';
+      }, 3000);
+    }
+
+    await waitWhilePaused(2500);
+    if (!demoState.active) return;
+    setDemoCaption('Guided demo completed: All actions were executed on live FalkorDB endpoints.');
+    showToast('Guided Demo Finished', 'Completed 4/4 real steps on synthetic data.', 'success');
+
+    setTimeout(() => {
+      stopGuidedDemo();
+    }, 4500);
+  } catch (err) {
+    stopGuidedDemo();
+    showToast('Guided Demo Error', err.message, 'error');
+  }
+}
+
+function setDemoCaption(text) {
+  const captionEl = document.getElementById('guided-demo-caption');
+  if (captionEl) captionEl.textContent = text;
+}
+
+function toggleDemoPause() {
+  if (!demoState.active) return;
+  demoState.paused = !demoState.paused;
+  const btn = document.getElementById('btn-demo-pause-resume');
+  if (btn) btn.textContent = demoState.paused ? 'Resume' : 'Pause';
+  if (demoState.paused) {
+    showToast('Guided Demo', 'Demo paused by operator', 'info');
+  } else {
+    showToast('Guided Demo', 'Demo resumed', 'info');
+  }
+}
+
+function stopGuidedDemo() {
+  demoState.active = false;
+  demoState.paused = false;
+  const banner = document.getElementById('guided-demo-banner');
+  const demoBtn = document.getElementById('btn-guided-demo');
+  if (banner) banner.style.display = 'none';
+  if (demoBtn) demoBtn.disabled = false;
+  if (state.isStreaming) {
+    cancelInvestigation();
+  }
+}
+
+async function waitWhilePaused(ms) {
+  let elapsed = 0;
+  const interval = 100;
+  while (elapsed < ms) {
+    if (!demoState.active) return;
+    if (!demoState.paused) {
+      elapsed += interval;
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
+}
+
+function executeDemoInvestigation() {
+  return new Promise((resolve, reject) => {
+    // If EventSource is supported, stream real live investigation
+    if (!window.EventSource) {
+      runDirectInvestigationFallback().then(resolve).catch(reject);
+      return;
+    }
+
+    startLiveInvestigation();
+
+    // Poll until investigation stream finishes or fails
+    const checkInterval = setInterval(() => {
+      if (!demoState.active) {
+        clearInterval(checkInterval);
+        resolve();
+        return;
+      }
+      if (!state.isStreaming) {
+        clearInterval(checkInterval);
+        if (state.liveFindings && state.liveFindings.length > 0) {
+          resolve();
+        } else {
+          // If SSE didn't return findings, fall back to direct POST
+          runDirectInvestigationFallback().then(resolve).catch(reject);
+        }
+      }
+    }, 500);
+
+    // Timeout safety cap at 25 seconds
+    setTimeout(() => {
+      clearInterval(checkInterval);
+      resolve();
+    }, 25000);
+  });
+}
+
 // 14. EVENT LISTENERS & HELPERS
 // ============================================================================
 function setupEventListeners() {
@@ -1565,6 +1762,13 @@ function setupEventListeners() {
   document.getElementById('btn-seed-data').addEventListener('click', seedGraphData);
   document.getElementById('btn-live-stream').addEventListener('click', startLiveInvestigation);
   document.getElementById('btn-cancel-stream').addEventListener('click', cancelInvestigation);
+
+  const guidedDemoBtn = document.getElementById('btn-guided-demo');
+  if (guidedDemoBtn) guidedDemoBtn.addEventListener('click', startGuidedDemo);
+  const pauseDemoBtn = document.getElementById('btn-demo-pause-resume');
+  if (pauseDemoBtn) pauseDemoBtn.addEventListener('click', toggleDemoPause);
+  const stopDemoBtn = document.getElementById('btn-demo-stop');
+  if (stopDemoBtn) stopDemoBtn.addEventListener('click', stopGuidedDemo);
 
   // Graph HUD Controls
   document.getElementById('btn-fit-screen').addEventListener('click', () => {
