@@ -1,25 +1,29 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyc
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Virtual Environments
 .venv/
 venv/
 ENV/
 
-# Secrets & Config
-.env
-.env.local
-*.env
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.pytest_cache/
 
-# IDE & OS
+# Runtime Generated Dossiers & Logs
+dossiers/
+*.log
+
+# IDE & OS Metadata
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-*.log
-.pytest_cache/
 
-# Persisted runtime dossiers (keep sample)
-dossiers/*.json
-!dossiers/INV-EXPORT-TEST.json
+# Private Drafts & Outdated Assets
+_private_not_for_repo/
