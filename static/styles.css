@@ -107,18 +107,18 @@ html, body {
 
 /* Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #E2E8F0;
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #CBD5E1;
 }
 
 /* Focus styles for keyboard accessibility */
@@ -1103,13 +1103,20 @@ header {
   align-items: center;
   border-bottom: 1px solid var(--border-light);
   background: #FFFFFF;
-  padding: 0 4px;
-  gap: 2px;
+  padding: 0 8px;
+  gap: 4px;
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
-  scrollbar-width: thin;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
   -webkit-overflow-scrolling: touch;
+}
+
+.panel-tabs::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+  height: 0;
+  width: 0;
 }
 
 .tab-btn {
