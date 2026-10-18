@@ -680,7 +680,7 @@ class FalkorFraudGraph:
             "verified_count": len(res.result_set),
             "tampered": False,
             "chain_tip_hash": expected_prev_hash,
-            "message": f"Tamper-evident verification passed. Verified {len(res.result_set)} immutable audit actions.",
+            "message": f"Tamper-evident verification passed. Verified {len(res.result_set)} audit actions in cryptographic SHA-256 chain.",
         }
 
     # -------------------------------------------------------------------------

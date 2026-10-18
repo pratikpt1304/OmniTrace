@@ -49,7 +49,9 @@ def main():
         if "path_trail" in f:
             print(f"      Multi-Hop Trail ({f['hop_count']} hops):")
             print(f"       -> {f['path_trail']}")
-            print(f"      FalkorDB Traversal Latency: {f.get('latency_ms', 1.0)}ms")
+            lat = f.get('engine_ms') or f.get('latency_ms') or f.get('roundtrip_ms')
+            if lat is not None:
+                print(f"      Traversal Latency: {lat}ms")
         if "cycle_path" in f:
             print(f"      Circular Laundering Loop:")
             print(f"       -> {f['cycle_path']}")
@@ -66,7 +68,8 @@ def main():
 
     # Summary
     print("\n" + "=" * 74)
-    print("  [SUCCESS] All multi-hop threats detected and neutralized on FalkorDB!")
+    print("  [SUCCESS] Multi-hop threats investigated and actions recorded in FalkorDB!")
+    print(f"  Mode: {dossier.get('agent_mode', 'rules')} | Threats Caught: {len(dossier['findings'])}")
     print(f"  Total Nodes in Graph: {dossier['graph_metrics']['total_nodes_audited']}")
     print(f"  Total Edges in Graph: {dossier['graph_metrics']['total_edges_traversed']}")
     print("  Run 'python server.py' to explore the Visual Threat Radar at http://localhost:8765")

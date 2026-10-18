@@ -191,10 +191,10 @@ async function checkApiHealth() {
 
       if (modeBadge) {
         if (data.agent_mode === 'llm') {
-          const prov = data.llm_provider === 'anthropic' ? 'Claude' : 'Gemini';
+          const prov = data.llm_provider === 'anthropic' ? 'AI agent: Claude' : 'AI agent: Gemini';
           modeBadge.textContent = prov;
         } else {
-          modeBadge.textContent = 'Rules Engine';
+          modeBadge.textContent = 'Rules mode (no LLM)';
         }
       }
     } else {
@@ -1558,87 +1558,6 @@ function exportInvestigationReport(invId, format) {
 // ============================================================================
 // 13. PRESENTATION MODE (2-MINUTE GUIDED FLOW)
 // ============================================================================
-let presentationRunning = false;
-
-function showNarration(text) {
-  const banner = document.getElementById('demo-banner');
-  const textEl = document.getElementById('demo-narration-text');
-  if (banner && textEl) {
-    textEl.textContent = text;
-    banner.style.display = 'flex';
-  }
-}
-
-function hideNarration() {
-  const banner = document.getElementById('demo-banner');
-  if (banner) banner.style.display = 'none';
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function startPresentationMode() {
-  if (presentationRunning) return;
-  presentationRunning = true;
-  const btn = document.getElementById('btn-presentation-mode');
-  if (btn) btn.disabled = true;
-
-  try {
-    showToast('Presentation Flow Started', 'Running autonomous live demo across real API endpoints', 'info');
-
-    // Step 1: Seed data
-    showNarration('Step 1/5: Seeding synthetic banking mesh into FalkorDB in-memory graph...');
-    await seedGraphData();
-    await sleep(2500);
-
-    // Step 2: Live AI Investigation
-    showNarration('Step 2/5: Streaming AI investigator traverses multi-hop graph to find threats...');
-    startLiveInvestigation();
-
-    // Wait until streaming finishes or findings appear
-    let waitCount = 0;
-    while (state.isStreaming && waitCount < 30) {
-      await sleep(1000);
-      waitCount++;
-    }
-    await sleep(2000);
-
-    // Step 3: Isolate Threat 0 (OFAC Sanctions)
-    if (state.liveFindings.length > 0) {
-      showNarration('Step 3/5: Isolating OFAC sanctions exposure trail on graph canvas...');
-      focusThreatTrail(0);
-      await sleep(4000);
-    }
-
-    // Step 4: Approve first proposed action if any
-    const firstApproveBtn = document.querySelector('.btn-approve');
-    if (firstApproveBtn) {
-      showNarration('Step 4/5: Enforcing zero-trust containment (severing outbound routes in FalkorDB)...');
-      firstApproveBtn.click();
-      await sleep(3000);
-    }
-
-    // Step 5: Switch to Ask Graph and submit RAG query
-    showNarration('Step 5/5: GraphRAG natural language query over FalkorDB schema...');
-    switchTab('ask');
-    setRagQuestion('How did money reach Hydra Exchange?');
-    await sleep(5000);
-
-    showNarration('✓ Presentation Complete! Autonomous agent detected, isolated, and neutralized threats.');
-    showToast('Demo Complete', 'All 5 phases demonstrated live on FalkorDB', 'success');
-    await sleep(4000);
-    hideNarration();
-  } catch (err) {
-    showToast('Demo Error', err.message, 'error');
-    hideNarration();
-  } finally {
-    presentationRunning = false;
-    if (btn) btn.disabled = false;
-  }
-}
-
-// ============================================================================
 // 14. EVENT LISTENERS & HELPERS
 // ============================================================================
 function setupEventListeners() {
@@ -1646,9 +1565,6 @@ function setupEventListeners() {
   document.getElementById('btn-seed-data').addEventListener('click', seedGraphData);
   document.getElementById('btn-live-stream').addEventListener('click', startLiveInvestigation);
   document.getElementById('btn-cancel-stream').addEventListener('click', cancelInvestigation);
-
-  const presBtn = document.getElementById('btn-presentation-mode');
-  if (presBtn) presBtn.addEventListener('click', startPresentationMode);
 
   // Graph HUD Controls
   document.getElementById('btn-fit-screen').addEventListener('click', () => {

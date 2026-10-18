@@ -89,20 +89,22 @@ def run_benchmark():
         falkor_ms = None
         if fg and (fg.graph is not None or fg.db is not None):
             try:
+                t0_f = time.perf_counter()
                 res = fg.query(
-                    "MATCH (src:Account), (target:SanctionedEntity) "
-                    "MATCH p = shortestPath((src)-[:TRANSFERRED*1..6]->(target)) "
-                    "RETURN length(p) LIMIT 1"
+                    "MATCH (src:Account {id: 'ACC_MULE_ALPHA'}), (target:SanctionedEntity) "
+                    "RETURN shortestPath((src)-[:TRANSFERRED*1..6]->(target)) AS p "
+                    "LIMIT 1"
                 )
+                t_f = (time.perf_counter() - t0_f) * 1000
                 if hasattr(res, "run_time_ms") and res.run_time_ms is not None:
                     falkor_ms = float(res.run_time_ms)
-            except Exception:
+                else:
+                    falkor_ms = t_f
+            except Exception as e:
                 pass
 
-        if falkor_ms is None:
-            falkor_ms = 0.45
-
-        print(f"{d:<18} | {avg_sqlite_ms:<26.4f} | {falkor_ms:<10.3f}")
+        falkor_str = f"{falkor_ms:<10.3f}" if falkor_ms is not None else "N/A"
+        print(f"{d:<18} | {avg_sqlite_ms:<26.4f} | {falkor_str}")
 
     print("-" * 72)
     print("Note: Official FalkorDB benchmarks & architectural metrics: https://docs.falkordb.com")

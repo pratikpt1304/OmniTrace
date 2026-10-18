@@ -219,92 +219,105 @@ class OmniTraceInvestigator:
 
     def _stream_anthropic(self, dossier: Dict[str, Any], goal: str, system_prompt: str):
         """Streams tool loop via Anthropic SDK with Claude Sonnet."""
-        import anthropic
+        try:
+            import anthropic
 
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-        anthropic_tools = [
-            {
-                "name": t["name"],
-                "description": t["description"],
-                "input_schema": t.get("parameters", {"type": "object", "properties": {}}),
+            anthropic_tools = [
+                {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "input_schema": t.get("parameters", {"type": "object", "properties": {}}),
+                }
+                for t in INVESTIGATION_TOOLS
+            ]
+
+            messages = [{"role": "user", "content": goal}]
+            step = 0
+
+            while step < self.max_steps:
+                step += 1
+                response = client.messages.create(
+                    model=self.model,
+                    max_tokens=1500,
+                    system=system_prompt,
+                    tools=anthropic_tools,
+                    messages=messages,
+                )
+
+                # Emit thinking text if present
+                for block in response.content:
+                    if getattr(block, "type", None) == "text" and block.text:
+                        yield {"event": "thinking", "data": {"text": block.text.strip(), "step": step}}
+
+                if response.stop_reason not in ("tool_use", "end_turn") and not any(getattr(b, "type", "") == "tool_use" for b in response.content):
+                    break
+
+                tool_results = []
+                has_tool = False
+                for block in response.content:
+                    if getattr(block, "type", None) == "tool_use":
+                        has_tool = True
+                        tool_name = block.name
+                        args = block.input or {}
+
+                        yield {
+                            "event": "tool_call",
+                            "data": {"step": step, "tool": tool_name, "arguments": args},
+                        }
+
+                        t0 = time.perf_counter()
+                        result = self._execute_tool(tool_name, args)
+                        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+                        summary = self._summarize_result(result)
+                        engine_ms = self._get_engine_ms(result)
+
+                        yield {
+                            "event": "tool_result",
+                            "data": {
+                                "step": step,
+                                "tool": tool_name,
+                                "summary": summary,
+                                "latency_ms": latency_ms,
+                                "engine_ms": engine_ms,
+                            },
+                        }
+
+                        self._record_trace(dossier, step, tool_name, args, result, latency_ms)
+                        new_findings, new_actions = self._synthesize_finding_from_tool(
+                            dossier, tool_name, args, result, latency_ms
+                        )
+
+                        for f in new_findings:
+                            yield {"event": "finding", "data": f}
+                        for a in new_actions:
+                            yield {"event": "proposed_action", "data": a}
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(result),
+                        })
+
+                if not has_tool or response.stop_reason == "end_turn":
+                    break
+
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": tool_results})
+        except Exception as e:
+            logger.error("Anthropic streaming error: %s. Operating in Rules Mode.", e)
+            dossier["agent_mode"] = "rules"
+            dossier["llm_error"] = str(e)
+            yield {
+                "event": "thinking",
+                "data": {
+                    "text": f"LLM error ({type(e).__name__}): {str(e)}. Operating in transparent Rules Mode.",
+                    "step": 1,
+                },
             }
-            for t in INVESTIGATION_TOOLS
-        ]
-
-        messages = [{"role": "user", "content": goal}]
-        step = 0
-
-        while step < self.max_steps:
-            step += 1
-            response = client.messages.create(
-                model=self.model,
-                max_tokens=1500,
-                system=system_prompt,
-                tools=anthropic_tools,
-                messages=messages,
-            )
-
-            # Emit thinking text if present
-            for block in response.content:
-                if getattr(block, "type", None) == "text" and block.text:
-                    yield {"event": "thinking", "data": {"text": block.text.strip(), "step": step}}
-
-            if response.stop_reason not in ("tool_use", "end_turn") and not any(getattr(b, "type", "") == "tool_use" for b in response.content):
-                break
-
-            tool_results = []
-            has_tool = False
-            for block in response.content:
-                if getattr(block, "type", None) == "tool_use":
-                    has_tool = True
-                    tool_name = block.name
-                    args = block.input or {}
-
-                    yield {
-                        "event": "tool_call",
-                        "data": {"step": step, "tool": tool_name, "arguments": args},
-                    }
-
-                    t0 = time.perf_counter()
-                    result = self._execute_tool(tool_name, args)
-                    latency_ms = round((time.perf_counter() - t0) * 1000, 2)
-
-                    summary = self._summarize_result(result)
-                    engine_ms = self._get_engine_ms(result)
-
-                    yield {
-                        "event": "tool_result",
-                        "data": {
-                            "step": step,
-                            "tool": tool_name,
-                            "summary": summary,
-                            "latency_ms": latency_ms,
-                            "engine_ms": engine_ms,
-                        },
-                    }
-
-                    self._record_trace(dossier, step, tool_name, args, result, latency_ms)
-                    new_findings, new_actions = self._synthesize_finding_from_tool(
-                        dossier, tool_name, args, result, latency_ms
-                    )
-
-                    for f in new_findings:
-                        yield {"event": "finding", "data": f}
-                    for a in new_actions:
-                        yield {"event": "proposed_action", "data": a}
-
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(result),
-                    })
-
-            if not has_tool or response.stop_reason == "end_turn":
-                break
-
-            messages.append({"role": "assistant", "content": response.content})
-            messages.append({"role": "user", "content": tool_results})
+            yield from self._stream_rules_fallback(dossier)
 
     def _stream_mock_llm(self, dossier: Dict[str, Any], goal: str, system_prompt: str):
         """Simulates step-by-step LLM decisions for testing."""
@@ -421,7 +434,16 @@ class OmniTraceInvestigator:
                     tool_responses.append(types.Part.from_function_response(name=tool_name, response={"result": result}))
                 response = chat.send_message(tool_responses)
         except Exception as e:
-            logger.error("Gemini streaming error: %s. Falling back to rules.", e)
+            logger.error("Gemini streaming error: %s. Operating in Rules Mode.", e)
+            dossier["agent_mode"] = "rules"
+            dossier["llm_error"] = str(e)
+            yield {
+                "event": "thinking",
+                "data": {
+                    "text": f"LLM provider error ({type(e).__name__}): {str(e)}. Operating in transparent Rules Mode.",
+                    "step": 1,
+                },
+            }
             yield from self._stream_rules_fallback(dossier)
 
     def _stream_rules_fallback(self, dossier: Dict[str, Any]):

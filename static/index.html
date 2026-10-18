@@ -48,8 +48,7 @@
       </div>
 
       <div class="metric-pill" id="ai-mode-pill">
-        <span>AI:</span>
-        <span class="val" id="ai-mode-badge">Claude</span>
+        <span class="val" id="ai-mode-badge">Rules mode (no LLM)</span>
       </div>
 
       <div class="metric-pill">
@@ -90,14 +89,6 @@
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
         Run Investigation
-      </button>
-
-      <button class="btn btn-secondary" id="btn-presentation-mode" title="Run 2-minute real guided demonstration">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polygon points="10 8 16 12 10 16 10 8"></polygon>
-        </svg>
-        Presentation Mode (2m)
       </button>
 
       <button class="btn btn-cancel" id="btn-cancel-stream" title="Cancel running investigation" aria-label="Cancel investigation">
@@ -338,7 +329,7 @@
             <button class="btn-xs" id="btn-verify-audit" title="Cryptographically verify SHA-256 audit blocks">Verify</button>
           </div>
           <div style="font-size:11px; color:var(--text-secondary); line-height:1.45; margin-bottom:8px;">
-            Every graph containment action generates an immutable <code style="font-family:var(--font-mono); background:var(--bg-subtle); padding:1px 4px; border-radius:4px;">(:EnforcementAction)</code> node chained with SHA-256 hashes.
+            Every graph containment action generates a tamper-evident <code style="font-family:var(--font-mono); background:var(--bg-subtle); padding:1px 4px; border-radius:4px;">(:EnforcementAction)</code> node chained with SHA-256 hashes.
           </div>
           <div id="audit-verification-result" style="font-size:11px; font-family:var(--font-mono); color:var(--text-muted);">
             Status: Ready to verify
@@ -452,12 +443,6 @@
 
   <!-- Live Toast Notifications Container -->
   <div id="toast-container" aria-live="polite"></div>
-
-  <!-- Presentation Mode Narration Banner -->
-  <div class="demo-banner" id="demo-banner" role="status">
-    <span class="live-pulse-dot"></span>
-    <span id="demo-narration-text">Presentation Mode Active</span>
-  </div>
 
   <!-- Main JavaScript Engine -->
   <script src="/static/app.js"></script>

@@ -24,7 +24,10 @@ STATIC_DIR = PROJECT_ROOT / "static"
 
 app = Flask(__name__, static_folder=str(STATIC_DIR))
 allowed_origins = os.getenv("ALLOWED_ORIGINS")
-CORS(app, origins=allowed_origins.split(",") if allowed_origins else "*")
+if allowed_origins:
+    CORS(app, origins=[o.strip() for o in allowed_origins.split(",") if o.strip()])
+else:
+    CORS(app, origins=["http://127.0.0.1:8765", "http://localhost:8765"])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("omnitrace.server")
@@ -323,7 +326,8 @@ def verify_api_key():
     """Verify X-API-Key header if OMNITRACE_API_KEY is configured."""
     required_key = os.getenv("OMNITRACE_API_KEY")
     if not required_key:
-        return None  # No API key required if not configured in env
+        logger.warning("SECURITY WARNING: OMNITRACE_API_KEY not configured; allowing unauthenticated request to %s", request.path)
+        return None
     provided_key = request.headers.get("X-API-Key")
     if not provided_key or provided_key != required_key:
         return jsonify({"ok": False, "error": "Unauthorized: Invalid or missing X-API-Key"}), 401
