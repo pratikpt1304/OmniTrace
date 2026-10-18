@@ -95,6 +95,8 @@ html, body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background-color: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -133,6 +135,7 @@ textarea:focus-visible {
 header {
   height: 56px;
   min-height: 56px;
+  flex-shrink: 0;
   background-color: #FFFFFF;
   border-bottom: 1px solid var(--border-light);
   display: flex;
@@ -345,7 +348,8 @@ header {
   display: grid;
   grid-template-columns: 380px minmax(0, 1fr) 400px;
   flex: 1;
-  height: calc(100vh - 56px);
+  min-height: 0;
+  height: auto;
   overflow: hidden;
   background-color: var(--bg-page);
 }
@@ -1503,6 +1507,8 @@ header {
   .nav-status {
     display: none;
   }
+}
+
 /* ==========================================================================
    Public Demo and Cold Start Banners
    ========================================================================== */
@@ -1516,7 +1522,8 @@ header {
   justify-content: space-between;
   font-size: 11px;
   font-family: var(--font-sans);
-  z-index: 45;
+  flex-shrink: 0;
+  z-index: 35;
 }
 
 .public-demo-hint {
@@ -1527,6 +1534,7 @@ header {
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .cold-start-banner {
@@ -1539,7 +1547,8 @@ header {
   gap: 10px;
   font-size: 12px;
   font-weight: 600;
-  z-index: 46;
+  flex-shrink: 0;
+  z-index: 36;
 }
 
 /* ==========================================================================
@@ -1554,7 +1563,8 @@ header {
   justify-content: space-between;
   border-bottom: 2px solid var(--sky-primary);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  z-index: 50;
+  flex-shrink: 0;
+  z-index: 37;
   animation: slideDown 0.25s ease-out;
 }
 
@@ -1568,6 +1578,7 @@ header {
   align-items: center;
   gap: 12px;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -1582,6 +1593,7 @@ header {
   letter-spacing: 0.03em;
   white-space: nowrap;
   font-family: var(--font-mono);
+  flex-shrink: 0;
 }
 
 .guided-demo-caption {
@@ -1591,6 +1603,7 @@ header {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .guided-demo-controls {
@@ -1598,6 +1611,7 @@ header {
   align-items: center;
   gap: 8px;
   margin-left: 16px;
+  flex-shrink: 0;
 }
 
 .btn-xs-demo {
@@ -1638,4 +1652,5 @@ header {
     height: 500px;
   }
 }
+
 
