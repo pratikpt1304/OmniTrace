@@ -202,7 +202,7 @@ async function checkApiHealth() {
       if (text) text.textContent = 'FalkorDB Online';
 
       if (demoBanner) {
-        demoBanner.style.display = data.public_demo ? 'flex' : 'none';
+        demoBanner.style.display = 'none';
       }
 
       if (modeBadge) {
