@@ -60,7 +60,8 @@ def main():
     # 5. Automated Graph Interventions / Actions
     print("\n[5/5] Automated Graph Enforcement Actions Taken by Agent:")
     for act in dossier["enforcement_actions"]:
-        print(f"      [ACTION EXECUTED] Frozen Account: {act['account_id']}")
+        status_label = "FROZEN" if act.get("status") == "FROZEN" else act.get("status", "ACTION")
+        print(f"      [{status_label}] {act.get('action')}: {act['account_id']}")
         print(f"                        Reason: {act['reason'][:75]}...")
 
     # Summary

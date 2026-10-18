@@ -495,12 +495,15 @@ class FalkorFraudGraph:
 
         acc_id, current_status, prev_risk = check_res.result_set[0]
         if current_status == "FROZEN":
+            latest_h = self.get_latest_audit_hash()
             return {
                 "success": True,
                 "account_id": account_id,
                 "status": "FROZEN",
                 "blocked_edges": 0,
                 "duplicate_skipped": True,
+                "audit_hash": latest_h,
+                "content_hash": latest_h,
                 "reason": f"Account already frozen. Skipped duplicate action.",
             }
 
@@ -558,6 +561,7 @@ class FalkorFraudGraph:
             "blocked_edges": blocked_count,
             "enforcement_id": enf_id,
             "content_hash": content_hash,
+            "audit_hash": content_hash,
             "reason": reason,
         }
 

@@ -8,6 +8,8 @@ Conforms to standard OpenAI / Anthropic / Gemini MCP Tool Call specs.
 from __future__ import annotations
 
 from typing import Any, Dict, List
+
+from core.falkor_graph import get_fraud_graph
 def tool_list_high_risk_accounts(threshold: int = 50, min_risk: int = None, graph=None) -> List[Dict[str, Any]]:
     """List bank accounts with high risk scores or flagged status to seed investigation."""
     g = graph or get_fraud_graph()

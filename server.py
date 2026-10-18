@@ -427,6 +427,8 @@ def api_freeze():
         return jsonify({"ok": False, "error": "account_id required"}), 400
 
     result = graph.freeze_account(account_id=acc_id, reason=reason, agent_id=agent_id)
+    if "ok" not in result:
+        result["ok"] = result.get("success", False)
     return jsonify(result)
 
 
@@ -455,10 +457,12 @@ def api_actions_approve():
             res = graph.freeze_account(acc_id, reason=reason, agent_id="approved_by_operator")
             executed.append(res)
 
+    audit_hash = executed[0].get("audit_hash") if executed else None
     return jsonify({
         "ok": True,
         "executed_count": len(executed),
         "executed_actions": executed,
+        "audit_hash": audit_hash,
     })
 
 

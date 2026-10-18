@@ -18,3 +18,8 @@ ENV/
 .DS_Store
 Thumbs.db
 *.log
+.pytest_cache/
+
+# Persisted runtime dossiers (keep sample)
+dossiers/*.json
+!dossiers/INV-EXPORT-TEST.json
