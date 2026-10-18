@@ -205,13 +205,10 @@ async function checkApiHealth() {
         demoBanner.style.display = 'none';
       }
 
+      const aiModePill = document.getElementById('ai-mode-pill');
+      if (aiModePill) aiModePill.style.display = 'none';
       if (modeBadge) {
-        if (data.agent_mode === 'llm') {
-          const prov = data.llm_provider === 'anthropic' ? 'AI agent: Claude' : 'AI agent: Gemini';
-          modeBadge.textContent = prov;
-        } else {
-          modeBadge.textContent = 'Rules mode (no LLM)';
-        }
+        modeBadge.textContent = '';
       }
     } else {
       throw new Error('Health check non-200');
