@@ -1099,13 +1099,18 @@ header {
   align-items: center;
   border-bottom: 1px solid var(--border-light);
   background: #FFFFFF;
-  padding: 0 8px;
+  padding: 0 4px;
   gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab-btn {
   height: 42px;
-  padding: 0 10px;
+  padding: 0 8px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -1115,7 +1120,9 @@ header {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--transition-fast);
 }
 
